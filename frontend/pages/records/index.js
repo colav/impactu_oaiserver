@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { Card, Typography, List, Space, Tag, Button, Spin, Empty, Pagination, Divider, Row, Col, Menu, Badge } from 'antd'
-import { CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, TeamOutlined, FilterOutlined, ArrowLeftOutlined } from '@ant-design/icons'
+import { Card, Typography, List, Space, Tag, Button, Spin, Empty, Pagination, Divider, Row, Col, Menu, Badge, Tooltip } from 'antd'
+import { CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, TeamOutlined, FilterOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
 import Link from 'next/link'
 
 const { Title, Text } = Typography
@@ -177,6 +177,15 @@ export default function Records() {
             </Text>
           </div>
           <Space>
+             <Tooltip title="Obtener link de cosecha OAI-PMH para esta colección">
+               <Button 
+                icon={<DownloadOutlined />} 
+                href={\`/oai?verb=ListRecords&metadataPrefix=oai_cerif_openaire_1.2\${set !== 'all' ? \`&set=\${set}\` : ''}\`}
+                target="_blank"
+               >
+                 Cosechar XML
+               </Button>
+             </Tooltip>
              {stats.total && <Tag color="blue">{stats.total} total global</Tag>}
           </Space>
         </div>
