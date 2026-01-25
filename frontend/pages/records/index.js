@@ -52,7 +52,7 @@ export default function Records() {
         if (type === 'Person') {
           const family = root.getElementsByTagName('FamilyNames')[0]?.textContent || '';
           const first = root.getElementsByTagName('FirstNames')[0]?.textContent || '';
-          title = \`\${family}\${family && first ? ', ' : ''}\${first}\`.trim() || identifier;
+          title = `${family}${family && first ? ', ' : ''}${first}`.trim() || identifier;
         } 
         // 2. ORGUNIT: Name
         else if (type === 'OrgUnit') {
@@ -71,7 +71,7 @@ export default function Records() {
         authors = personNodes.map(p => {
           const f = p.getElementsByTagName('FamilyNames')[0]?.textContent || '';
           const n = p.getElementsByTagName('FirstNames')[0]?.textContent || '';
-          return f || n ? \`\${f}, \${n}\` : p.textContent.trim();
+          return f || n ? `${f}, ${n}` : p.textContent.trim();
         }).filter(Boolean)
       }
     }
@@ -180,7 +180,7 @@ export default function Records() {
              <Tooltip title="Obtener link de cosecha OAI-PMH para esta colección">
                <Button 
                 icon={<DownloadOutlined />} 
-                href={\`/oai?verb=ListRecords&metadataPrefix=oai_cerif_openaire_1.2\${set !== 'all' ? \`&set=\${set}\` : ''}\`}
+                href={`/oai?verb=ListRecords&metadataPrefix=oai_cerif_openaire_1.2${set !== 'all' ? `&set=${set}` : ''}`}
                 target="_blank"
                >
                  Cosechar XML
