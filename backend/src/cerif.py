@@ -221,10 +221,13 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         "Funding": "http://purl.org/coar/resource_type/c_18cf",
     }
     default_coar = coar_defaults.get(local_name)
-    if default_coar:
+    if default_coar and local_name in vocab_map:
         try:
-            typ = etree.SubElement(top, "{" + openaire_ns + "}Type")
+            vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
+            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
+            # place COAR URI value and include required scheme attribute
             typ.text = default_coar
+            typ.set("scheme", "URI")
         except Exception:
             pass
 
@@ -321,7 +324,13 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
                 ident.set("type", _detect_scheme(str(xid)) or "other")
             except Exception:
                 pass
-        return ident
+            # Ensure Identifier always has a type attribute (default 'other')
+            if not ident.get("type"):
+                try:
+                    ident.set("type", "other")
+                except Exception:
+                    pass
+            return ident
 
     if local_name == "Publication":
         titles = doc.get("titles") or doc.get("names") or []
