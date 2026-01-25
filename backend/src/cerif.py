@@ -56,7 +56,7 @@ def _emit_identifier(parent, xid):
         _text(xid_el, "source", xid.get("source") or xid.get("provenance"))
     else:
         _text(xid_el, "id", xid)
-        _text(xid_el, "scheme", _detect_scheme(str(xid)))
+                    # Emit a Type element in the matching COAR vocab namespace with a COAR URI default
     return xid_el
 
 
@@ -69,7 +69,7 @@ def _emit_date(parent, u: Any):
             _text(de, "type", u.get("type"))
         elif u.get("source"):
             _text(de, "source", u.get("source"))
-    else:
+                            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
         de.text = str(u)
     return de
 
@@ -362,6 +362,9 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
                 ident.set("type", _detect_scheme(str(xid)) or "other")
             except Exception:
                 pass
+            # Ensure Identifier always has a type attribute (default 'other')
+            if not ident.get("type"):
+                ident.set("type", "other")
         return ident
 
     if local_name == "Publication":
