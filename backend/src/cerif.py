@@ -225,9 +225,8 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         try:
             vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
             typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
-            # place COAR URI value and include required scheme attribute
+            # place COAR URI value (no extra attributes)
             typ.text = default_coar
-            typ.set("scheme", "URI")
         except Exception:
             pass
 

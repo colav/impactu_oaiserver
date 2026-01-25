@@ -33,6 +33,10 @@ REPO_IDENTIFIER = "impactu.colav.co"
 
 BASE_URL = os.environ.get("OAI_BASE_URL", "http://localhost:8000/oai")
 
+# If the request handler passes a base_url, store it here temporarily so responses
+# (Identify, request elements) use the actual incoming URL the client used.
+CURRENT_REQUEST_URL = None
+
 OAI_COLLECTIONS = [
     "works",
     "patents",
@@ -54,7 +58,7 @@ def identify():
     responseDate = etree.SubElement(root, "responseDate")
     responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
     request = etree.SubElement(root, "request")
-    request.text = BASE_URL
+    request.text = CURRENT_REQUEST_URL or BASE_URL
     identify = etree.SubElement(root, "Identify")
     repoName = etree.SubElement(identify, "repositoryName")
     repoName.text = "Impactu OAI-PMH CERIF"
@@ -136,7 +140,7 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
     responseDate = etree.SubElement(root, "responseDate")
     responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
     request = etree.SubElement(root, "request")
-    request.text = BASE_URL
+    request.text = CURRENT_REQUEST_URL or BASE_URL
     listRecords = etree.SubElement(root, "ListRecords")
 
     set_to_col = {
@@ -240,7 +244,7 @@ def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, p
     responseDate = etree.SubElement(root, "responseDate")
     responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
     request = etree.SubElement(root, "request")
-    request.text = BASE_URL
+    request.text = CURRENT_REQUEST_URL or BASE_URL
     listIds = etree.SubElement(root, "ListIdentifiers")
 
     coll_idx = start_index
@@ -330,7 +334,7 @@ def get_record(identifier: str, metadataPrefix: Optional[str] = "cerif"):
     responseDate = etree.SubElement(root, "responseDate")
     responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
     request = etree.SubElement(root, "request")
-    request.text = BASE_URL
+    request.text = CURRENT_REQUEST_URL or BASE_URL
     record = etree.SubElement(root, "record")
     _doc_header(record, collection, doc)
     metadata = etree.SubElement(record, "metadata")
@@ -338,7 +342,11 @@ def get_record(identifier: str, metadataPrefix: Optional[str] = "cerif"):
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
-def handle_oai(args):
+def handle_oai(args, base_url: Optional[str] = None):
+    # allow the caller to pass a base_url (populated by the HTTP handler)
+    global CURRENT_REQUEST_URL
+    if base_url:
+        CURRENT_REQUEST_URL = base_url
     verb = args.get("verb")
     if verb == "Identify":
         return identify()

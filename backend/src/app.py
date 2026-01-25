@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import Response, JSONResponse
 from .oai import handle_oai, OAI_COLLECTIONS
 from .mongo_client import get_db
@@ -14,6 +14,7 @@ app = FastAPI()
 
 @app.get("/oai")
 def oai_endpoint(
+    request: Request,
     verb: str = Query(None),
     metadataPrefix: str = Query(None),
     resumptionToken: str = Query(None),
@@ -31,7 +32,11 @@ def oai_endpoint(
     }
     args = {k: v for k, v in args.items() if v is not None}
     try:
-        xml = handle_oai(args)
+        # pass the effective request base URL to the OAI handler so Identify returns matching base
+        host = request.headers.get("host")
+        scheme = request.url.scheme
+        base = f"{scheme}://{host}{request.url.path}"
+        xml = handle_oai(args, base_url=base)
         return Response(content=xml, media_type="application/xml")
     except Exception as e:
         # log full traceback and return a valid OAI-PMH XML error response
