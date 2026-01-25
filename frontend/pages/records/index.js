@@ -33,13 +33,12 @@ const OAI_COLLECTIONS = [
 ]
 
 const METADATA_FORMATS = [
-  { value: 'oai_cerif_openaire_1.2', label: 'CERIF OpenAIRE 1.2', description: 'Formato estándar OpenAIRE CRIS 1.2' },
-  { value: 'oai_cerif_openaire_1.1.1', label: 'CERIF OpenAIRE 1.1.1', description: 'Versión compatible 1.1.1' },
+  { value: 'cerif', label: 'CERIF 1.2', description: 'Formato estándar CERIF 1.2' },
 ]
 
 export default function Records() {
   const router = useRouter()
-  const { set = 'all', prefix = 'oai_cerif_openaire_1.2', from, until } = router.query
+  const { set = 'all', prefix = 'cerif', from, until } = router.query
   
   const [loading, setLoading] = useState(false)
   const [records, setRecords] = useState([])
@@ -53,27 +52,26 @@ export default function Records() {
   const [cursor, setCursor] = useState(0)
 
   const parseRecord = (node) => {
-    // Helper to find child by local name (case-insensitive and namespace-agnostic)
-    const getLocal = (parent, name) => {
+    // Robust tag finders
+    const findLocal = (parent, tagName) => {
       if (!parent) return null;
-      const lowerReq = name.toLowerCase();
+      const lower = tagName.toLowerCase();
       return Array.from(parent.childNodes).find(n => 
-        n.nodeType === 1 && (n.localName?.toLowerCase() === lowerReq || n.nodeName.split(':').pop().toLowerCase() === lowerReq)
+        n.nodeType === 1 && (n.localName?.toLowerCase() === lower || n.nodeName.split(':').pop().toLowerCase() === lower)
       );
     };
-
-    const getAllLocal = (parent, name) => {
+    const findAllLocal = (parent, tagName) => {
       if (!parent) return [];
-      const lowerReq = name.toLowerCase();
+      const lower = tagName.toLowerCase();
       return Array.from(parent.childNodes).filter(n => 
-        n.nodeType === 1 && (n.localName?.toLowerCase() === lowerReq || n.nodeName.split(':').pop().toLowerCase() === lowerReq)
+        n.nodeType === 1 && (n.localName?.toLowerCase() === lower || n.nodeName.split(':').pop().toLowerCase() === lower)
       );
     };
 
-    const header = getLocal(node, 'header');
-    const metadata = getLocal(node, 'metadata');
-    const identifier = getLocal(header, 'identifier')?.textContent || 'Sin ID';
-    const datestamp = getLocal(header, 'datestamp')?.textContent || '-';
+    const header = findLocal(node, 'header');
+    const metadata = findLocal(node, 'metadata');
+    const identifier = findLocal(header, 'identifier')?.textContent || 'Sin ID';
+    const datestamp = findLocal(header, 'datestamp')?.textContent || '-';
     
     let title = 'Sin título/nombre'
     let authors = []
@@ -88,24 +86,26 @@ export default function Records() {
         type = root.localName || root.nodeName.split(':').pop();
         
         if (type === 'Person') {
-          const family = getLocal(root, 'FamilyNames')?.textContent || '';
-          const first = getLocal(root, 'FirstNames')?.textContent || '';
+          const pn = findLocal(root, 'PersonName');
+          const family = findLocal(pn || root, 'FamilyNames')?.textContent || '';
+          const first = findLocal(pn || root, 'FirstNames')?.textContent || '';
           title = `${family}${family && first ? ', ' : ''}${first}`.trim() || identifier;
         } 
         else if (type === 'OrgUnit') {
-          title = getLocal(root, 'Name')?.textContent || identifier;
+          title = findLocal(root, 'Name')?.textContent || identifier;
         }
         else {
-          title = getLocal(root, 'Title')?.textContent || 
-                  getLocal(root, 'title')?.textContent || 
-                  getLocal(root, 'Name')?.textContent ||
+          title = findLocal(root, 'Title')?.textContent || 
+                  findLocal(root, 'title')?.textContent || 
+                  findLocal(root, 'Name')?.textContent ||
                   identifier;
-          description = getLocal(root, 'Abstract')?.textContent || '';
+          description = findLocal(root, 'Abstract')?.textContent || '';
         }
 
-        authors = getAllLocal(root, 'Person').map(p => {
-          const f = getLocal(p, 'FamilyNames')?.textContent || '';
-          const n = getLocal(p, 'FirstNames')?.textContent || '';
+        authors = findAllLocal(root, 'Person').map(p => {
+          const pn = findLocal(p, 'PersonName');
+          const f = findLocal(pn || p, 'FamilyNames')?.textContent || '';
+          const n = findLocal(pn || p, 'FirstNames')?.textContent || '';
           return f || n ? `${f}, ${n}` : p.textContent.trim();
         }).filter(Boolean)
       }
@@ -129,38 +129,34 @@ export default function Records() {
   const fetchRecords = async (url) => {
     setLoading(true)
     setErrorHeader(null)
-    setRecords([]) // Clear existing records to avoid confusion
+    setRecords([])
     try {
+      console.log("Fetching OAI from:", url);
       const res = await fetch(url)
-      if (!res.ok) throw new Error(`HTTP Error ${res.status}`)
+      if (!res.ok) throw new Error(`Servidor OAI no responde (HTTP ${res.status})`)
       const text = await res.text()
+      
       const parser = new DOMParser()
       const xmlDoc = parser.parseFromString(text, "text/xml")
       
-      // Check for XML parsing error
       const parserError = xmlDoc.getElementsByTagName("parsererror")[0];
-      if (parserError) {
-        console.error("XML Parser Error:", parserError.textContent);
-        throw new Error("Error al procesar la respuesta XML del servidor OAI");
-      }
+      if (parserError) throw new Error("XML Malformado: " + parserError.textContent);
 
+      // Super robust search: traverse all nodes and check names ignoring namespaces/case
       const findInDoc = (tagName) => {
         const lower = tagName.toLowerCase();
-        // Try getElementsByTagNameNS for robust namespace-agnostic search
-        try {
-          const nsNodes = xmlDoc.getElementsByTagNameNS("*", tagName);
-          if (nsNodes.length > 0) return Array.from(nsNodes);
-        } catch(e) {}
-
-        // Fallback to getElementsByTagName
-        const tagNodes = xmlDoc.getElementsByTagName(tagName);
-        if (tagNodes.length > 0) return Array.from(tagNodes);
-
-        // Ultimate fallback: manually filter every element
-        return Array.from(xmlDoc.querySelectorAll('*')).filter(n => {
-          const nodeName = n.localName || n.nodeName.split(':').pop();
-          return nodeName.toLowerCase() === lower;
-        });
+        const found = [];
+        const traverse = (node) => {
+          if (node.nodeType === 1) { // Element
+            const name = node.localName || node.nodeName.split(':').pop();
+            if (name && name.toLowerCase() === lower) found.push(node);
+          }
+          for (let i = 0; i < node.childNodes.length; i++) {
+            traverse(node.childNodes[i]);
+          }
+        };
+        traverse(xmlDoc);
+        return found;
       };
 
       const oaiError = findInDoc('error')[0];
@@ -170,21 +166,20 @@ export default function Records() {
           message: oaiError.textContent
         })
         setTotalCount(0)
-        setRecords([])
         return
       }
 
       const recordNodes = findInDoc('record');
-      console.log(`Found ${recordNodes.length} records`);
+      const rtNodes = findInDoc('resumptionToken');
+      console.log(`📡 [OAI-MASTER] Registros encontrados: ${recordNodes.length}`);
       
-      const rtNode = findInDoc('resumptionToken')[0];
-      if (rtNode) {
+      if (rtNodes.length > 0) {
+        const rtNode = rtNodes[0];
         setResumptionToken(rtNode.textContent?.trim() || null)
         setTotalCount(parseInt(rtNode.getAttribute('completeListSize') || '0'))
         setCursor(parseInt(rtNode.getAttribute('cursor') || '0'))
       } else {
         setResumptionToken(null)
-        // If no token but we have records, use records.length as total for this page
         if (recordNodes.length > 0) {
           setTotalCount(recordNodes.length);
           setCursor(0);
@@ -196,7 +191,7 @@ export default function Records() {
       setRecords(recordNodes.map(parseRecord))
     } catch (err) {
       console.error('OAI Fetch Error:', err)
-      setErrorHeader({ code: 'Error de Red/Formato', message: err.message })
+      setErrorHeader({ code: 'Error', message: err.message })
     } finally {
       setLoading(false)
     }
@@ -207,7 +202,7 @@ export default function Records() {
   useEffect(() => {
     if (router.isReady) {
       const { set, prefix, from, until } = router.query
-      const pref = prefix || 'oai_cerif_openaire_1.2'
+      const pref = prefix || 'cerif'
       let url = `/oai?verb=ListRecords&metadataPrefix=${pref}`
       if (set && set !== 'all') url += `&set=${set}`
       if (from) url += `&from=${from}`

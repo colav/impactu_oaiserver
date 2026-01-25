@@ -61,7 +61,7 @@ def identify():
     request.text = CURRENT_REQUEST_URL or BASE_URL
     identify = etree.SubElement(root, "Identify")
     repoName = etree.SubElement(identify, "repositoryName")
-    repoName.text = "Impactu OAI-PMH CERIF"
+    repoName.text = "Impactu OAI-PMH CERIF v1.2"
     baseURL = etree.SubElement(identify, "baseURL")
     # prefer the effective request URL (set by the HTTP handler) so Identify/baseURL
     # reflects the actual URL clients used (important when behind the proxy)
@@ -123,15 +123,31 @@ def _decode_token(token: str) -> Dict[str, Any]:
         return {}
 
 
-def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionToken: Optional[str] = None, pageSize: int = 100, setSpec: Optional[str] = None):
+def ListRecords_with_pagination(
+    db, 
+    metadataPrefix: str = "cerif", 
+    resumptionToken: Optional[str] = None, 
+    pageSize: int = 100, 
+    setSpec: Optional[str] = None,
+    from_arg: Optional[str] = None,
+    until_arg: Optional[str] = None
+):
     state = {"coll_index": 0, "last_id": None, "served": 0}
     if resumptionToken:
         dec = _decode_token(resumptionToken)
         if isinstance(dec, dict):
             state.update(dec)
+    
     start_index = int(state.get("coll_index", 0))
     last_id = state.get("last_id")
     served = int(state.get("served") or 0)
+    
+    # Priority for token values but fallback to direct args
+    from_val = state.get("from") or from_arg
+    until_val = state.get("until") or until_arg
+    set_val = state.get("set") or setSpec
+    prefix_val = state.get("prefix") or metadataPrefix
+
     # validation limit across the whole harvest (0 = unlimited)
     try:
         validation_limit = int(os.environ.get("OAI_VALIDATION_LIMIT", "0") or 0)
@@ -157,8 +173,8 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
         "openaire_cris_equipments": [],
     }
     allowed_collections = None
-    if setSpec:
-        allowed_collections = set_to_col.get(setSpec)
+    if set_val:
+        allowed_collections = set_to_col.get(set_val)
     coll_idx = start_index
     remaining = pageSize
     if validation_limit > 0:
@@ -180,14 +196,20 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
         coll = db[coll_name]
         query = {}
 
-        if from_arg or until_arg:
+        if from_val or until_val:
             date_query = {}
-            if from_arg:
-                date_query["$gte"] = int(datetime.datetime.strptime(from_arg, "%Y-%m-%d").timestamp())
-            if until_arg:
-                date_query["$lte"] = int(datetime.datetime.strptime(until_arg, "%Y-%m-%d").timestamp())
-            query["updated.time"] = date_query
-
+            if from_val:
+                try:
+                    date_query["$gte"] = int(datetime.datetime.strptime(from_val, "%Y-%m-%d").timestamp())
+                except: pass
+            if until_val:
+                try:
+                    date_query["$lte"] = int(datetime.datetime.strptime(until_val, "%Y-%m-%d").timestamp())
+                except: pass
+            if date_query:
+                query["updated.time"] = date_query
+        
+        print(f"[OAI-DEBUG] Coll: {coll_name}, Query: {query}")
         if last_id and coll_idx == start_index:
             query["_id"] = {"$gt": last_id}
         cursor = coll.find(query).sort("_id", 1).limit(remaining)
@@ -196,7 +218,7 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
             record = etree.SubElement(listRecords, "record")
             _doc_header(record, coll_name, doc)
             metadata = etree.SubElement(record, "metadata")
-            cerif_el = doc_to_cerif_element(doc, collection=coll_name, metadataPrefix=metadataPrefix)
+            cerif_el = doc_to_cerif_element(doc, collection=coll_name, metadataPrefix=prefix_val)
             metadata.append(cerif_el)
             last_seen = (coll_name, doc.get("_id"))
             served += 1
@@ -228,8 +250,12 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
                     break
 
     if has_more and next_state:
-        # include served count in the resumption token so the validation limit is enforced across pages
+        # include served count and filters in the resumption token
         next_state["served"] = served
+        if from_val: next_state["from"] = from_val
+        if until_val: next_state["until"] = until_val
+        if set_val: next_state["set"] = set_val
+        if prefix_val: next_state["prefix"] = prefix_val
         token = _encode_token(next_state)
         rt = etree.SubElement(listRecords, "resumptionToken")
         rt.text = token
@@ -237,16 +263,16 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
-def ListRecords_with_pagination(
+def ListIdentifiers_with_pagination(
     db, 
-    metadataPrefix: str = "cerif", 
+    metadataPrefix: str = "cerif",
     resumptionToken: Optional[str] = None, 
     pageSize: int = 100, 
     setSpec: Optional[str] = None,
     from_arg: Optional[str] = None,
     until_arg: Optional[str] = None
 ):
-    state = {"coll_index": 0, "last_id": None, "served": 0, "from": from_arg, "until": until_arg}
+    state = {"coll_index": 0, "last_id": None, "served": 0}
     if resumptionToken:
         dec = _decode_token(resumptionToken)
         if isinstance(dec, dict):
@@ -255,8 +281,12 @@ def ListRecords_with_pagination(
     start_index = int(state.get("coll_index", 0))
     last_id = state.get("last_id")
     served = int(state.get("served") or 0)
-    from_arg = state.get("from")
-    until_arg = state.get("until")
+    
+    # Priority for token values but fallback to direct args
+    from_arg = state.get("from") or from_arg
+    until_arg = state.get("until") or until_arg
+    set_val = state.get("set") or setSpec
+    prefix_val = state.get("prefix") or metadataPrefix
 
     try:
         validation_limit = int(os.environ.get("OAI_VALIDATION_LIMIT", "0") or 0)
@@ -277,6 +307,21 @@ def ListRecords_with_pagination(
 
     listIds = etree.SubElement(root, "ListIdentifiers")
 
+    set_to_col = {
+        "openaire_cris_publications": ["works"],
+        "openaire_cris_products": ["sources"],
+        "openaire_cris_patents": ["patents"],
+        "openaire_cris_persons": ["person"],
+        "openaire_cris_orgunits": ["affiliations"],
+        "openaire_cris_projects": ["projects"],
+        "openaire_cris_funding": [],
+        "openaire_cris_events": ["events"],
+        "openaire_cris_equipments": [],
+    }
+    allowed_collections = None
+    if set_val:
+        allowed_collections = set_to_col.get(set_val)
+
     coll_idx = start_index
     remaining = pageSize
     if validation_limit > 0:
@@ -286,14 +331,32 @@ def ListRecords_with_pagination(
     last_seen = None
     while coll_idx < len(OAI_COLLECTIONS) and remaining > 0:
         coll_name = OAI_COLLECTIONS[coll_idx]
+        if allowed_collections is not None and coll_name not in allowed_collections:
+            coll_idx += 1
+            last_id = None
+            continue
         if coll_name not in db.list_collection_names():
             coll_idx += 1
             last_id = None
             continue
         coll = db[coll_name]
         query = {}
+
+        if from_arg or until_arg:
+            date_query = {}
+            if from_arg:
+                try:
+                    date_query["$gte"] = int(datetime.datetime.strptime(from_arg, "%Y-%m-%d").timestamp())
+                except: pass
+            if until_arg:
+                try:
+                    date_query["$lte"] = int(datetime.datetime.strptime(until_arg, "%Y-%m-%d").timestamp())
+                except: pass
+            if date_query:
+                query["updated.time"] = date_query
+
         if last_id and coll_idx == start_index:
-            query = {"_id": {"$gt": last_id}}
+            query["_id"] = {"$gt": last_id}
         cursor = coll.find(query).sort("_id", 1).limit(remaining)
         docs = list(cursor)
         for doc in docs:
@@ -301,7 +364,7 @@ def ListRecords_with_pagination(
             identifier = etree.SubElement(header, "identifier")
             identifier.text = f"{coll_name}:{doc.get('_id')}"
             datestamp = etree.SubElement(header, "datestamp")
-            raw = (doc.get("updated") or [{}])[-1].get("time") if isinstance(doc.get("updated"), list) and doc.get("updated") else doc.get("date") or None
+            raw = (doc.get("updated") or [{}])[-1].get("time") if isinstance(doc.get("updated"), list) and doc.get("updated") else doc.get("date") or doc.get("year") or None
             datestamp.text = _format_datestamp(raw)
             last_seen = (coll_name, doc.get("_id"))
             served += 1
@@ -333,11 +396,16 @@ def ListRecords_with_pagination(
 
     if has_more and next_state:
         next_state["served"] = served
+        if from_arg: next_state["from"] = from_arg
+        if until_arg: next_state["until"] = until_arg
+        if set_val: next_state["set"] = set_val
+        if prefix_val: next_state["prefix"] = prefix_val
         token = _encode_token(next_state)
         rt = etree.SubElement(listIds, "resumptionToken")
         rt.text = token
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
 
 
 def get_record(identifier: str, metadataPrefix: Optional[str] = "cerif"):
@@ -389,18 +457,11 @@ def handle_oai(args, base_url: Optional[str] = None):
         lm = etree.SubElement(root, "ListMetadataFormats")
         mf1 = etree.SubElement(lm, "metadataFormat")
         mp1 = etree.SubElement(mf1, "metadataPrefix")
-        mp1.text = "oai_cerif_openaire_1.2"
+        mp1.text = "cerif"
         schema1 = etree.SubElement(mf1, "schema")
         schema1.text = "https://www.openaire.eu/schema/cris/1.2/openaire-cerif-profile.xsd"
         mn1 = etree.SubElement(mf1, "metadataNamespace")
         mn1.text = "https://www.openaire.eu/cerif-profile/1.2/"
-        mf2 = etree.SubElement(lm, "metadataFormat")
-        mp2 = etree.SubElement(mf2, "metadataPrefix")
-        mp2.text = "oai_cerif_openaire_1.1.1"
-        schema2 = etree.SubElement(mf2, "schema")
-        schema2.text = "https://www.openaire.eu/schema/cris/1.1.1/openaire-cerif-profile.xsd"
-        mn2 = etree.SubElement(mf2, "metadataNamespace")
-        mn2.text = "https://www.openaire.eu/cerif-profile/1.1.1/"
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     elif verb == "ListSets":
         root = _oai_root()
@@ -449,8 +510,19 @@ def handle_oai(args, base_url: Optional[str] = None):
     elif verb == "ListIdentifiers":
         token = args.get("resumptionToken")
         pageSize = int(args.get("pageSize") or 100)
+        setSpec = args.get("set")
+        from_arg = args.get("from")
+        until_arg = args.get("until")
         db = get_db()
-        return ListIdentifiers_with_pagination(db, token, pageSize)
+        return ListIdentifiers_with_pagination(
+            db, 
+            args.get("metadataPrefix", "cerif"),
+            token, 
+            pageSize, 
+            setSpec,
+            from_arg=from_arg, 
+            until_arg=until_arg
+        )
     else:
         root = _oai_root()
         responseDate = etree.SubElement(root, "responseDate")
