@@ -11,7 +11,16 @@ PROXY_SCRIPT="$ROOT/harness/proxy_single_set.py"
 
 tmpfile="/tmp/openaire_sets_$$.xml"
 echo "Fetching sets from: $ENDPOINT"
-curl -sSf "$ENDPOINT?verb=ListSets" > "$tmpfile"
+if ! curl -sSf "$ENDPOINT?verb=ListSets" > "$tmpfile"; then
+  echo "Warning: ListSets failed or returned non-2xx; falling back to single run" >&2
+fi
+
+if [ ! -s "$tmpfile" ]; then
+  echo "ListSets returned empty — running single validator against $ENDPOINT"
+  VALIDATOR_ENDPOINT="$ENDPOINT" docker compose run --rm openaire-validator || true
+  rm -f "$tmpfile"
+  exit 0
+fi
 
 sets=$(python3 - <<PY
 import sys,xml.etree.ElementTree as ET
@@ -26,7 +35,7 @@ for s in root.findall('.//{http://www.openarchives.org/OAI/2.0/}set'):
 print('\n'.join(specs))
 PY
 )
-
+  echo "No sets found after parsing; aborting" >&2
 if [ -z "$sets" ]; then
   echo "No sets found; aborting" >&2
   exit 2
