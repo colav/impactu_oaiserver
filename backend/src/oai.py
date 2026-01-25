@@ -63,7 +63,9 @@ def identify():
     repoName = etree.SubElement(identify, "repositoryName")
     repoName.text = "Impactu OAI-PMH CERIF"
     baseURL = etree.SubElement(identify, "baseURL")
-    baseURL.text = BASE_URL
+    # prefer the effective request URL (set by the HTTP handler) so Identify/baseURL
+    # reflects the actual URL clients used (important when behind the proxy)
+    baseURL.text = CURRENT_REQUEST_URL or BASE_URL
     protocolVersion = etree.SubElement(identify, "protocolVersion")
     protocolVersion.text = "2.0"
     adminEmail = etree.SubElement(identify, "adminEmail")

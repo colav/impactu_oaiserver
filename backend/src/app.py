@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from .oai import handle_oai, OAI_COLLECTIONS
 from .mongo_client import get_db
 import os
@@ -43,6 +44,16 @@ def oai_endpoint(
         base = f"{scheme}://{host}{request.url.path}"
         _logging.info(f"OAI incoming headers: X-Forwarded-Host={xf!r}, Host={host_hdr!r}")
         _logging.info(f"Computed base URL for OAI responses: {base}")
+        # If this is a browser request (Accept: text/html) and there are no OAI args,
+        # serve the frontend SPA so humans see the UI at /oai. Otherwise return OAI XML.
+        accept = request.headers.get("accept", "")
+        if not args and "text/html" in accept.lower():
+            # try to return frontend-built index
+            frontend_index = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "out", "index.html")
+            )
+            if os.path.exists(frontend_index):
+                return FileResponse(frontend_index, media_type="text/html")
         xml = handle_oai(args, base_url=base)
         return Response(content=xml, media_type="application/xml")
     except Exception as e:
@@ -75,6 +86,29 @@ def stats():
         total += n
     out["total"] = total
     return JSONResponse(out)
+
+
+def _frontend_index_path() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "out", "index.html"))
+
+
+@app.get("/")
+def root():
+    idx = _frontend_index_path()
+    if os.path.exists(idx):
+        return FileResponse(idx, media_type="text/html")
+    return JSONResponse({"status": "backend running"})
+
+
+@app.get("/{full_path:path}")
+def catch_all(full_path: str, request: Request):
+    # Serve SPA index for browser navigations (so client-side routing works)
+    accept = request.headers.get("accept", "")
+    idx = _frontend_index_path()
+    if "text/html" in accept.lower() and os.path.exists(idx):
+        return FileResponse(idx, media_type="text/html")
+    # otherwise let FastAPI return 404 for unknown resources
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 
 def main() -> None:
