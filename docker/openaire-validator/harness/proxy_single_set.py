@@ -25,7 +25,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self.forward_request()
 
     def forward_request(self):
-        target_url = self.target.rstrip('/') + self.path
+        # avoid duplicating the /oai path if target already contains it
+        if self.target.endswith('/oai') and self.path.startswith('/oai'):
+            base = self.target[:-4]
+        else:
+            base = self.target.rstrip('/')
+        target_url = base + self.path
         try:
             req = urllib.request.Request(target_url)
             with urllib.request.urlopen(req, timeout=30) as resp:
@@ -42,7 +47,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
     def handle_listsets(self):
         # fetch original ListSets
-        target_url = self.target.rstrip('/') + self.path
+        if self.target.endswith('/oai') and self.path.startswith('/oai'):
+            base = self.target[:-4]
+        else:
+            base = self.target.rstrip('/')
+        target_url = base + self.path
         try:
             req = urllib.request.Request(target_url)
             with urllib.request.urlopen(req, timeout=30) as resp:
