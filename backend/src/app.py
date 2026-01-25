@@ -24,6 +24,8 @@ def oai_endpoint(
     pageSize: int = Query(None),
     identifier: str = Query(None),
     set: str = Query(None),
+    from_date: str = Query(None, alias="from"),
+    until_date: str = Query(None, alias="until"),
 ):
     args = {
         "verb": verb,
@@ -32,6 +34,8 @@ def oai_endpoint(
         "pageSize": pageSize,
         "identifier": identifier,
         "set": set,
+        "from": from_date,
+        "until": until_date,
     }
     args = {k: v for k, v in args.items() if v is not None}
     try:

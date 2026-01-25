@@ -179,8 +179,17 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
             continue
         coll = db[coll_name]
         query = {}
+
+        if from_arg or until_arg:
+            date_query = {}
+            if from_arg:
+                date_query["$gte"] = int(datetime.datetime.strptime(from_arg, "%Y-%m-%d").timestamp())
+            if until_arg:
+                date_query["$lte"] = int(datetime.datetime.strptime(until_arg, "%Y-%m-%d").timestamp())
+            query["updated.time"] = date_query
+
         if last_id and coll_idx == start_index:
-            query = {"_id": {"$gt": last_id}}
+            query["_id"] = {"$gt": last_id}
         cursor = coll.find(query).sort("_id", 1).limit(remaining)
         docs = list(cursor)
         for doc in docs:
@@ -228,15 +237,27 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
-def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, pageSize: int = 100):
-    state = {"coll_index": 0, "last_id": None, "served": 0}
+def ListRecords_with_pagination(
+    db, 
+    metadataPrefix: str = "cerif", 
+    resumptionToken: Optional[str] = None, 
+    pageSize: int = 100, 
+    setSpec: Optional[str] = None,
+    from_arg: Optional[str] = None,
+    until_arg: Optional[str] = None
+):
+    state = {"coll_index": 0, "last_id": None, "served": 0, "from": from_arg, "until": until_arg}
     if resumptionToken:
         dec = _decode_token(resumptionToken)
         if isinstance(dec, dict):
             state.update(dec)
+    
     start_index = int(state.get("coll_index", 0))
     last_id = state.get("last_id")
     served = int(state.get("served") or 0)
+    from_arg = state.get("from")
+    until_arg = state.get("until")
+
     try:
         validation_limit = int(os.environ.get("OAI_VALIDATION_LIMIT", "0") or 0)
     except Exception:
@@ -246,7 +267,14 @@ def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, p
     responseDate = etree.SubElement(root, "responseDate")
     responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
     request = etree.SubElement(root, "request")
-    request.text = CURRENT_REQUEST_URL or BASE_URL
+    
+    request_url = CURRENT_REQUEST_URL or BASE_URL
+    if from_arg and "from=" not in request_url:
+        request_url += f"&from={from_arg}"
+    if until_arg and "until=" not in request_url:
+        request_url += f"&until={until_arg}"
+    request.text = request_url
+
     listIds = etree.SubElement(root, "ListIdentifiers")
 
     coll_idx = start_index
@@ -403,8 +431,18 @@ def handle_oai(args, base_url: Optional[str] = None):
         token = args.get("resumptionToken")
         pageSize = int(args.get("pageSize") or 100)
         setSpec = args.get("set")
+        from_arg = args.get("from")
+        until_arg = args.get("until")
         db = get_db()
-        return ListRecords_with_pagination(db, args.get("metadataPrefix", "cerif"), token, pageSize, setSpec)
+        return ListRecords_with_pagination(
+            db, 
+            args.get("metadataPrefix", "cerif"), 
+            token, 
+            pageSize, 
+            setSpec,
+            from_arg=from_arg,
+            until_arg=until_arg
+        )
     elif verb == "GetRecord":
         identifier = args.get("identifier")
         return get_record(identifier, args.get("metadataPrefix", "cerif"))
