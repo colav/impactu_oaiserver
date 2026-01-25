@@ -33,7 +33,8 @@ def oai_endpoint(
     args = {k: v for k, v in args.items() if v is not None}
     try:
         # pass the effective request base URL to the OAI handler so Identify returns matching base
-        host = request.headers.get("host")
+        # prefer X-Forwarded-Host when behind our proxy so Identify/baseURL match proxy
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
         scheme = request.url.scheme
         base = f"{scheme}://{host}{request.url.path}"
         xml = handle_oai(args, base_url=base)

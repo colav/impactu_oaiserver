@@ -34,7 +34,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         try:
             # preserve the incoming Host (proxy host) so backend constructs request URLs matching the proxy
             incoming_host = self.headers.get('Host') or f'127.0.0.1:{self.server.server_port}'
-            headers = {'Host': incoming_host}
+            headers = {'Host': incoming_host, 'X-Forwarded-Host': incoming_host}
             req = urllib.request.Request(target_url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read()
@@ -57,7 +57,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
         target_url = base + self.path
         try:
             incoming_host = self.headers.get('Host') or f'127.0.0.1:{self.server.server_port}'
-            headers = {'Host': incoming_host}
+            headers = {'Host': incoming_host, 'X-Forwarded-Host': incoming_host}
             req = urllib.request.Request(target_url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read()
