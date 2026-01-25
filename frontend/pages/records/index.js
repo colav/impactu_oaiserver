@@ -10,25 +10,26 @@ import {
   FilterOutlined, ArrowLeftOutlined, DownloadOutlined,
   SearchOutlined, SettingOutlined, CodeOutlined,
   DeleteOutlined, SortAscendingOutlined, FileTextOutlined,
-  FileZipOutlined
+  FileZipOutlined, TeamOutlined, DeploymentUnitOutlined,
+  ProjectOutlined, SafetyCertificateOutlined, WarningOutlined
 } from '@ant-design/icons'
 import Link from 'next/link'
 import dayjs from 'dayjs'
+import { Alert } from 'antd'
 
 const { Title, Text, Paragraph } = Typography
 const { Option } = Select
 const { RangePicker } = DatePicker
 
 const OAI_COLLECTIONS = [
-  { key: 'all', label: 'Todos los Registros', icon: <DatabaseOutlined /> },
-  { key: 'works', label: 'Obras (Works)', countKey: 'works' },
-  { key: 'person', label: 'Personas', countKey: 'person' },
-  { key: 'affiliations', label: 'Afiliaciones', countKey: 'affiliations' },
-  { key: 'projects', label: 'Proyectos', countKey: 'projects' },
-  { key: 'patents', label: 'Patentes', countKey: 'patents' },
-  { key: 'sources', label: 'Fuentes', countKey: 'sources' },
-  { key: 'events', label: 'Eventos', countKey: 'events' },
-  { key: 'subjects', label: 'Temas', countKey: 'subjects' },
+  { key: 'all', label: 'Todos los Registros', icon: <DatabaseOutlined />, countKey: 'total' },
+  { key: 'openaire_cris_publications', label: 'Publicaciones', countKey: 'works', icon: <FileTextOutlined /> },
+  { key: 'openaire_cris_persons', label: 'Investigadores', countKey: 'person', icon: <TeamOutlined /> },
+  { key: 'openaire_cris_orgunits', label: 'Organizaciones', countKey: 'affiliations', icon: <DeploymentUnitOutlined /> },
+  { key: 'openaire_cris_projects', label: 'Proyectos', countKey: 'projects', icon: <ProjectOutlined /> },
+  { key: 'openaire_cris_products', label: 'Productos/Fuentes', countKey: 'sources', icon: <DatabaseOutlined /> },
+  { key: 'openaire_cris_patents', label: 'Patentes', countKey: 'patents', icon: <SafetyCertificateOutlined /> },
+  { key: 'openaire_cris_events', label: 'Eventos', countKey: 'events', icon: <CalendarOutlined /> },
 ]
 
 const METADATA_FORMATS = [
@@ -52,10 +53,27 @@ export default function Records() {
   const [cursor, setCursor] = useState(0)
 
   const parseRecord = (node) => {
-    const header = node.getElementsByTagName('header')[0]
-    const metadata = node.getElementsByTagName('metadata')[0]
-    const identifier = header?.getElementsByTagName('identifier')[0]?.textContent
-    const datestamp = header?.getElementsByTagName('datestamp')[0]?.textContent
+    // Helper to find child by local name (case-insensitive and namespace-agnostic)
+    const getLocal = (parent, name) => {
+      if (!parent) return null;
+      const lowerReq = name.toLowerCase();
+      return Array.from(parent.childNodes).find(n => 
+        n.nodeType === 1 && (n.localName?.toLowerCase() === lowerReq || n.nodeName.split(':').pop().toLowerCase() === lowerReq)
+      );
+    };
+
+    const getAllLocal = (parent, name) => {
+      if (!parent) return [];
+      const lowerReq = name.toLowerCase();
+      return Array.from(parent.childNodes).filter(n => 
+        n.nodeType === 1 && (n.localName?.toLowerCase() === lowerReq || n.nodeName.split(':').pop().toLowerCase() === lowerReq)
+      );
+    };
+
+    const header = getLocal(node, 'header');
+    const metadata = getLocal(node, 'metadata');
+    const identifier = getLocal(header, 'identifier')?.textContent || 'Sin ID';
+    const datestamp = getLocal(header, 'datestamp')?.textContent || '-';
     
     let title = 'Sin título/nombre'
     let authors = []
@@ -63,29 +81,31 @@ export default function Records() {
     let description = ''
 
     if (metadata) {
-      const root = metadata.firstElementChild;
+      // The entity (Publication, Person, etc.) is the first ELEMENT node inside metadata
+      const root = Array.from(metadata.childNodes).find(n => n.nodeType === 1);
+      
       if (root) {
-        type = root.tagName;
+        type = root.localName || root.nodeName.split(':').pop();
+        
         if (type === 'Person') {
-          const family = root.getElementsByTagName('FamilyNames')[0]?.textContent || '';
-          const first = root.getElementsByTagName('FirstNames')[0]?.textContent || '';
+          const family = getLocal(root, 'FamilyNames')?.textContent || '';
+          const first = getLocal(root, 'FirstNames')?.textContent || '';
           title = `${family}${family && first ? ', ' : ''}${first}`.trim() || identifier;
         } 
         else if (type === 'OrgUnit') {
-          title = root.getElementsByTagName('Name')[0]?.textContent || identifier;
+          title = getLocal(root, 'Name')?.textContent || identifier;
         }
         else {
-          title = root.getElementsByTagName('Title')[0]?.textContent || 
-                  root.getElementsByTagName('title')[0]?.textContent || 
-                  root.getElementsByTagName('Name')[0]?.textContent ||
+          title = getLocal(root, 'Title')?.textContent || 
+                  getLocal(root, 'title')?.textContent || 
+                  getLocal(root, 'Name')?.textContent ||
                   identifier;
-          description = root.getElementsByTagName('Abstract')[0]?.textContent || '';
+          description = getLocal(root, 'Abstract')?.textContent || '';
         }
 
-        const personNodes = Array.from(root.getElementsByTagName('Person') || [])
-        authors = personNodes.map(p => {
-          const f = p.getElementsByTagName('FamilyNames')[0]?.textContent || '';
-          const n = p.getElementsByTagName('FirstNames')[0]?.textContent || '';
+        authors = getAllLocal(root, 'Person').map(p => {
+          const f = getLocal(p, 'FamilyNames')?.textContent || '';
+          const n = getLocal(p, 'FirstNames')?.textContent || '';
           return f || n ? `${f}, ${n}` : p.textContent.trim();
         }).filter(Boolean)
       }
@@ -104,29 +124,59 @@ export default function Records() {
     } catch (e) { console.error(e) }
   }
 
+  const [errorHeader, setErrorHeader] = useState(null)
+
   const fetchRecords = async (url) => {
     setLoading(true)
+    setErrorHeader(null)
+    setRecords([]) // Clear existing records to avoid confusion
     try {
       const res = await fetch(url)
-      if (!res.ok) throw new Error('OAI server error')
+      if (!res.ok) throw new Error(`HTTP Error ${res.status}`)
       const text = await res.text()
       const parser = new DOMParser()
       const xmlDoc = parser.parseFromString(text, "text/xml")
       
-      const rtNode = xmlDoc.getElementsByTagName('resumptionToken')[0]
+      // Check for XML parsing error
+      const parserError = xmlDoc.getElementsByTagName("parsererror")[0];
+      if (parserError) {
+        console.error("XML Parser Error:", parserError.textContent);
+        throw new Error("Error al procesar la respuesta XML del servidor OAI");
+      }
+
+      const findInDoc = (tagName) => {
+        const lower = tagName.toLowerCase();
+        return Array.from(xmlDoc.getElementsByTagName('*')).filter(n => 
+          (n.localName?.toLowerCase() === lower || n.nodeName.split(':').pop().toLowerCase() === lower)
+        );
+      };
+
+      const oaiError = findInDoc('error')[0];
+      if (oaiError) {
+        setErrorHeader({
+          code: oaiError.getAttribute('code') || 'Error',
+          message: oaiError.textContent
+        })
+        setTotalCount(0)
+        return
+      }
+
+      const rtNode = findInDoc('resumptionToken')[0];
       if (rtNode) {
-        setResumptionToken(rtNode.textContent || null)
+        setResumptionToken(rtNode.textContent?.trim() || null)
         setTotalCount(parseInt(rtNode.getAttribute('completeListSize') || '0'))
         setCursor(parseInt(rtNode.getAttribute('cursor') || '0'))
       } else {
         setResumptionToken(null)
+        setTotalCount(0)
       }
 
-      const recordNodes = Array.from(xmlDoc.getElementsByTagName('record'))
+      const recordNodes = findInDoc('record');
+      console.log(`Found ${recordNodes.length} records`);
       setRecords(recordNodes.map(parseRecord))
     } catch (err) {
-      console.error(err)
-      setRecords([])
+      console.error('OAI Fetch Error:', err)
+      setErrorHeader({ code: 'Error de Red/Formato', message: err.message })
     } finally {
       setLoading(false)
     }
@@ -266,7 +316,11 @@ export default function Records() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>{item.icon} {item.label}</span>
                   {item.countKey && stats[item.countKey] !== undefined && (
-                    <Badge count={stats[item.countKey]} overflowCount={99999} style={{ backgroundColor: '#e6f7ff', color: '#1890ff', boxShadow: 'none' }} />
+                    <Badge 
+                      count={stats[item.countKey]} 
+                      overflowCount={99999999} 
+                      style={{ backgroundColor: '#e6f7ff', color: '#1890ff', boxShadow: 'none' }} 
+                    />
                   )}
                 </div>
               ),
@@ -284,15 +338,18 @@ export default function Records() {
                 {OAI_COLLECTIONS.find(c => c.key === set)?.label || 'Explorador'}
               </Title>
               <Text type="secondary">
-                {(totalCount > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length} de ${totalCount}` : 'Cargando...'}
+                {loading ? 'Consultando servidor OAI...' : 
+                 errorHeader ? `Error: ${errorHeader.code}` :
+                 (totalCount > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length} de ${totalCount}` : 
+                 'No hay registros para mostrar'}
               </Text>
-              {totalCount > 0 && (
+              {totalCount > 0 && !loading && (
                 <Progress 
                   percent={Math.round((cursor + filteredRecords.length) / totalCount * 100)} 
                   size="small" 
                   status="active" 
                   strokeColor="#328181"
-                  style={{ width: 200, display: 'block', marginTop: 4 }}
+                  style={{ width: 220, display: 'block', marginTop: 4 }}
                 />
               )}
             </Col>
@@ -307,9 +364,6 @@ export default function Records() {
                 />
                 <Tooltip title="Descargar vista actual como CSV">
                   <Button icon={<FileTextOutlined />} onClick={() => exportData('csv')} />
-                </Tooltip>
-                <Tooltip title="Descargar vista actual como JSON">
-                  <Button icon={<FileZipOutlined />} onClick={() => exportData('json')} />
                 </Tooltip>
                 <Tooltip title="Link de cosecha OAI-PMH (XML)">
                   <Button 
@@ -326,6 +380,17 @@ export default function Records() {
             </Col>
           </Row>
         </div>
+
+        {errorHeader && (
+          <Alert
+            message={`Error OAI: ${errorHeader.code}`}
+            description={errorHeader.message}
+            type="warning"
+            showIcon
+            icon={<WarningOutlined />}
+            style={{ marginBottom: 24, borderRadius: 8 }}
+          />
+        )}
 
         {loading ? (
           <List
