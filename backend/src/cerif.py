@@ -207,12 +207,50 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         "Publication": "COAR_Publication_Types",
         "Product": "COAR_Product_Types",
         "Patent": "COAR_Patent_Types",
-        "Project": "COAR_Project_Types",
-        "Equipment": "COAR_Equipment_Types",
-        "Funding": "COAR_Funding_Types",
-    }
-    # Add a Type element in the COAR vocab namespace with a COAR URI default
-    coar_defaults = {
+            if not text:
+                return
+            # If abstract is an inverted index (token -> [positions]) reconstruct text
+            def _inv_to_text(inv):
+                if not isinstance(inv, dict):
+                    return str(inv)
+                # inv may be {'abstract': {token: [pos,...]}, 'lang':..., ...}
+                idx = inv.get("abstract") if "abstract" in inv else inv
+                if not isinstance(idx, dict):
+                    return str(inv)
+                pos_map = {}
+                maxpos = -1
+                for token, poses in idx.items():
+                    try:
+                        for p in (poses or []):
+                            pi = int(p)
+                            pos_map[pi] = token
+                            if pi > maxpos:
+                                maxpos = pi
+                    except Exception:
+                        # fallback: ignore position
+                        pass
+                if maxpos < 0:
+                    # nothing with positions, join keys
+                    return " ".join(idx.keys())
+                out = [""] * (maxpos + 1)
+                for p, tok in pos_map.items():
+                    if 0 <= p <= maxpos:
+                        out[p] = tok
+                return " ".join([w for w in out if w])
+
+            text_val = _inv_to_text(text)
+            el = etree.SubElement(parent, "Abstract")
+            el.text = str(text_val)
+            # try to preserve language if present
+            try:
+                lang = text.get("lang") if isinstance(text, dict) else None
+                if lang:
+                    el.set("{http://www.w3.org/XML/1998/namespace}lang", str(lang))
+                else:
+                    el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+            except Exception:
+                el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+            return el
         "Publication": "http://purl.org/coar/resource_type/c_0040",
         "Product": "http://purl.org/coar/resource_type/ACF7-8YT9",
         "Patent": "http://purl.org/coar/resource_type/c_15cd",
