@@ -223,9 +223,15 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
     default_coar = coar_defaults.get(local_name)
     if default_coar and local_name in vocab_map:
         try:
-            # Type must be in the OpenAIRE namespace (not the vocab namespace)
-            typ = etree.SubElement(top, "{" + openaire_ns + "}Type")
+            vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
+            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
             typ.text = default_coar
+            # some element types require a 'scheme' attribute (e.g., Project)
+            if local_name == "Project":
+                try:
+                    typ.set("scheme", "URI")
+                except Exception:
+                    pass
         except Exception:
             pass
 
