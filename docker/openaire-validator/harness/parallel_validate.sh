@@ -35,9 +35,10 @@ for s in root.findall('.//{http://www.openarchives.org/OAI/2.0/}set'):
 print('\n'.join(specs))
 PY
 )
-  echo "No sets found after parsing; aborting" >&2
+ 
 if [ -z "$sets" ]; then
-  echo "No sets found; aborting" >&2
+  echo "No sets found after parsing; aborting" >&2
+  rm -f "$tmpfile"
   exit 2
 fi
 
@@ -46,6 +47,7 @@ echo "Found $(echo "$sets" | wc -l) sets; concurrency=$CONCURRENCY"
 port_base=18000
 i=0
 run_jobs=0
+jobs=""
 
 for set in $(echo "$sets"); do
   port=$((port_base + i))
