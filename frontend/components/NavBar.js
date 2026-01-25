@@ -67,11 +67,6 @@ export default function NavBar() {
                 Explorar
               </Button>
             </Link>
-            <Link href="/oai?verb=Identify">
-              <Button type="ghost" style={{ color: '#ffffff', borderColor: '#ffffff', fontWeight: 600 }}>
-                Protocolo
-              </Button>
-            </Link>
           </Space>
         </Col>
       </Row>

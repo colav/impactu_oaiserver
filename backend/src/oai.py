@@ -6,6 +6,7 @@ import datetime
 from typing import Optional, Dict, Any
 import json
 import base64
+from bson import ObjectId
 
 
 def _format_datestamp(raw):
@@ -177,6 +178,7 @@ def ListRecords_with_pagination(
         allowed_collections = set_to_col.get(set_val)
     coll_idx = start_index
     remaining = pageSize
+    records_in_response = 0
     if validation_limit > 0:
         remaining = min(remaining, max(0, validation_limit - served))
         if remaining <= 0:
@@ -211,7 +213,12 @@ def ListRecords_with_pagination(
         
         print(f"[OAI-DEBUG] Coll: {coll_name}, Query: {query}")
         if last_id and coll_idx == start_index:
-            query["_id"] = {"$gt": last_id}
+            # Handle ObjectId conversion if necessary
+            target_id = last_id
+            if isinstance(last_id, str) and len(last_id) == 24:
+                try: target_id = ObjectId(last_id)
+                except: pass
+            query["_id"] = {"$gt": target_id}
         cursor = coll.find(query).sort("_id", 1).limit(remaining)
         docs = list(cursor)
         for doc in docs:
@@ -222,6 +229,7 @@ def ListRecords_with_pagination(
             metadata.append(cerif_el)
             last_seen = (coll_name, doc.get("_id"))
             served += 1
+            records_in_response += 1
             # stop early if we've hit the validation limit
             if validation_limit > 0 and served >= validation_limit:
                 break
@@ -259,6 +267,15 @@ def ListRecords_with_pagination(
         token = _encode_token(next_state)
         rt = etree.SubElement(listRecords, "resumptionToken")
         rt.text = token
+        # Optional attributes: cursor is the number of records ALREADY sent
+        rt.set("cursor", str(served - records_in_response))
+        # Total count for the specific set if requested
+        if set_val and set_val in set_to_col:
+            total = 0
+            for c_name in set_to_col[set_val]:
+                if c_name in db.list_collection_names():
+                    total += db[c_name].count_documents({}) # Simple count
+            rt.set("completeListSize", str(total))
 
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
@@ -356,7 +373,11 @@ def ListIdentifiers_with_pagination(
                 query["updated.time"] = date_query
 
         if last_id and coll_idx == start_index:
-            query["_id"] = {"$gt": last_id}
+            target_id = last_id
+            if isinstance(last_id, str) and len(last_id) == 24:
+                try: target_id = ObjectId(last_id)
+                except: pass
+            query["_id"] = {"$gt": target_id}
         cursor = coll.find(query).sort("_id", 1).limit(remaining)
         docs = list(cursor)
         for doc in docs:

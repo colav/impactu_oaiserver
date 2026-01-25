@@ -3,7 +3,7 @@ import { useRouter } from 'next/router'
 import { 
   Card, Typography, List, Space, Tag, Button, Spin, Empty, 
   Divider, Row, Col, Menu, Badge, Tooltip, Select, DatePicker, 
-  Input, Skeleton, Progress
+  Input, Skeleton, Progress, Collapse
 } from 'antd'
 import { 
   CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, 
@@ -16,8 +16,10 @@ import {
 import Link from 'next/link'
 import dayjs from 'dayjs'
 import { Alert } from 'antd'
+import XMLViewer from '../../components/XMLViewer'
 
 const { Title, Text, Paragraph } = Typography
+const { Panel } = Collapse
 const { Option } = Select
 const { RangePicker } = DatePicker
 
@@ -111,7 +113,9 @@ export default function Records() {
       }
     }
 
-    return { id: identifier, title, authors, datestamp, type, description }
+    const rawXml = metadata ? new XMLSerializer().serializeToString(metadata) : null;
+
+    return { id: identifier, title, authors, datestamp, type, description, rawXml }
   }
 
   const fetchStats = async () => {
@@ -176,7 +180,13 @@ export default function Records() {
       if (rtNodes.length > 0) {
         const rtNode = rtNodes[0];
         setResumptionToken(rtNode.textContent?.trim() || null)
-        setTotalCount(parseInt(rtNode.getAttribute('completeListSize') || '0'))
+        const totalAttr = rtNode.getAttribute('completeListSize');
+        if (totalAttr) {
+          setTotalCount(parseInt(totalAttr))
+        } else if (recordNodes.length > 0) {
+          // If no attribute but we have records, don't set to 0
+          setTotalCount(Math.max(totalCount, recordNodes.length))
+        }
         setCursor(parseInt(rtNode.getAttribute('cursor') || '0'))
       } else {
         setResumptionToken(null)
@@ -355,7 +365,7 @@ export default function Records() {
               <Text type="secondary">
                 {loading ? 'Consultando servidor OAI...' : 
                  errorHeader ? `Error: ${errorHeader.code}` :
-                 (totalCount > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length} de ${totalCount}` : 
+                 (records.length > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length}${totalCount > records.length ? ` de ${totalCount}` : ''}` : 
                  'No hay registros para mostrar'}
               </Text>
               {totalCount > 0 && !loading && (
@@ -438,7 +448,7 @@ export default function Records() {
                           {item.description}
                         </Paragraph>
                       )}
-                      <Space size="middle">
+                      <Space size="middle" style={{ marginBottom: 12 }}>
                         <Tag color="cyan">{item.type}</Tag>
                         <Text type="secondary" style={{ fontSize: 12 }}><CalendarOutlined /> {item.datestamp}</Text>
                         <Text type="secondary" style={{ fontSize: 12 }}>{item.id}</Text>
@@ -454,6 +464,17 @@ export default function Records() {
                            />
                         </Tooltip>
                       </Space>
+
+                      {item.rawXml && (
+                        <Collapse ghost size="small">
+                          <Panel 
+                            header={<Text type="secondary" style={{ fontSize: 12 }}><CodeOutlined /> Ver XML CERIF</Text>} 
+                            key="1"
+                          >
+                            <XMLViewer xml={item.rawXml} />
+                          </Panel>
+                        </Collapse>
+                      )}
                     </Col>
                     <Col><Link href={`/records/${encodeURIComponent(item.id)}`}><Button type="text" icon={<ArrowRightOutlined />} /></Link></Col>
                   </Row>
