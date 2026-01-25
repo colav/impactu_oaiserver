@@ -56,7 +56,7 @@ def _emit_identifier(parent, xid):
         _text(xid_el, "source", xid.get("source") or xid.get("provenance"))
     else:
         _text(xid_el, "id", xid)
-                    # Emit a Type element in the matching COAR vocab namespace with a COAR URI default
+        _text(xid_el, "scheme", _detect_scheme(str(xid)))
     return xid_el
 
 
@@ -69,7 +69,7 @@ def _emit_date(parent, u: Any):
             _text(de, "type", u.get("type"))
         elif u.get("source"):
             _text(de, "source", u.get("source"))
-                            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
+    else:
         de.text = str(u)
     return de
 
@@ -207,50 +207,12 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         "Publication": "COAR_Publication_Types",
         "Product": "COAR_Product_Types",
         "Patent": "COAR_Patent_Types",
-            if not text:
-                return
-            # If abstract is an inverted index (token -> [positions]) reconstruct text
-            def _inv_to_text(inv):
-                if not isinstance(inv, dict):
-                    return str(inv)
-                # inv may be {'abstract': {token: [pos,...]}, 'lang':..., ...}
-                idx = inv.get("abstract") if "abstract" in inv else inv
-                if not isinstance(idx, dict):
-                    return str(inv)
-                pos_map = {}
-                maxpos = -1
-                for token, poses in idx.items():
-                    try:
-                        for p in (poses or []):
-                            pi = int(p)
-                            pos_map[pi] = token
-                            if pi > maxpos:
-                                maxpos = pi
-                    except Exception:
-                        # fallback: ignore position
-                        pass
-                if maxpos < 0:
-                    # nothing with positions, join keys
-                    return " ".join(idx.keys())
-                out = [""] * (maxpos + 1)
-                for p, tok in pos_map.items():
-                    if 0 <= p <= maxpos:
-                        out[p] = tok
-                return " ".join([w for w in out if w])
-
-            text_val = _inv_to_text(text)
-            el = etree.SubElement(parent, "Abstract")
-            el.text = str(text_val)
-            # try to preserve language if present
-            try:
-                lang = text.get("lang") if isinstance(text, dict) else None
-                if lang:
-                    el.set("{http://www.w3.org/XML/1998/namespace}lang", str(lang))
-                else:
-                    el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
-            except Exception:
-                el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
-            return el
+        "Project": "COAR_Project_Types",
+        "Equipment": "COAR_Equipment_Types",
+        "Funding": "COAR_Funding_Types",
+    }
+    # Add a Type element in the OpenAIRE namespace with a COAR URI default
+    coar_defaults = {
         "Publication": "http://purl.org/coar/resource_type/c_0040",
         "Product": "http://purl.org/coar/resource_type/ACF7-8YT9",
         "Patent": "http://purl.org/coar/resource_type/c_15cd",
@@ -259,13 +221,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         "Funding": "http://purl.org/coar/resource_type/c_18cf",
     }
     default_coar = coar_defaults.get(local_name)
-    if default_coar and local_name in vocab_map:
+    if default_coar:
         try:
-            vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
-            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
-            # place COAR URI value and include required scheme attribute
+            typ = etree.SubElement(top, "{" + openaire_ns + "}Type")
             typ.text = default_coar
-            typ.set("scheme", "URI")
         except Exception:
             pass
 
@@ -362,9 +321,6 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
                 ident.set("type", _detect_scheme(str(xid)) or "other")
             except Exception:
                 pass
-            # Ensure Identifier always has a type attribute (default 'other')
-            if not ident.get("type"):
-                ident.set("type", "other")
         return ident
 
     if local_name == "Publication":
