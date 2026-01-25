@@ -237,11 +237,64 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         return el
 
     def _add_abstract(parent, text):
+        def _abstract_to_text(t):
+            if not t:
+                return None
+            if isinstance(t, str):
+                return t
+            if isinstance(t, list):
+                # prefer first item if it's text-like
+                return t[0] if t else None
+            if isinstance(t, dict):
+                # case: {'abstract': {word: [positions], ...}, 'lang': 'en', ...}
+                inv = t.get("abstract")
+                if isinstance(inv, dict):
+                    # reconstruct by positions
+                    positions = {}
+                    maxpos = -1
+                    for token, poslist in inv.items():
+                        if not isinstance(poslist, list):
+                            continue
+                        for p in poslist:
+                            try:
+                                pi = int(p)
+                            except Exception:
+                                continue
+                            positions[pi] = token
+                            if pi > maxpos:
+                                maxpos = pi
+                    if maxpos >= 0:
+                        arr = [None] * (maxpos + 1)
+                        for idx, tok in positions.items():
+                            if 0 <= idx <= maxpos:
+                                arr[idx] = tok
+                        return " ".join([x for x in arr if x])
+                # other dict shapes: prefer common keys
+                for key in ("text", "value", "abstract", "description"):
+                    v = t.get(key)
+                    if isinstance(v, str):
+                        return v
+                    if isinstance(v, list) and v:
+                        return v[0]
+                # fallback: join dict keys
+                try:
+                    return " ".join([str(k) for k in t.keys()])
+                except Exception:
+                    return None
+            return None
+
         if not text:
             return
+        plain = _abstract_to_text(text)
+        if not plain:
+            return
         el = etree.SubElement(parent, "Abstract")
-        el.text = str(text)
-        el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+        el.text = str(plain)
+        # preserve language if provided
+        lang = None
+        if isinstance(text, dict):
+            lang = text.get("lang") or text.get("language")
+        el.set("{http://www.w3.org/XML/1998/namespace}lang", lang or "en")
         return el
 
     def _add_identifier(parent, xid):
