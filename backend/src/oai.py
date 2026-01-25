@@ -355,7 +355,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         responseDate = etree.SubElement(root, "responseDate")
         responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
         request = etree.SubElement(root, "request")
-        request.text = BASE_URL
+        request.text = CURRENT_REQUEST_URL or BASE_URL
         lm = etree.SubElement(root, "ListMetadataFormats")
         mf1 = etree.SubElement(lm, "metadataFormat")
         mp1 = etree.SubElement(mf1, "metadataPrefix")
@@ -377,7 +377,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         responseDate = etree.SubElement(root, "responseDate")
         responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
         request = etree.SubElement(root, "request")
-        request.text = "http://localhost:8000/oai"
+        request.text = CURRENT_REQUEST_URL or BASE_URL
         ls = etree.SubElement(root, "ListSets")
         sets = [
             ("openaire_cris_publications", "OpenAIRE_CRIS_publications"),
@@ -416,7 +416,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         responseDate = etree.SubElement(root, "responseDate")
         responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
         request = etree.SubElement(root, "request")
-        request.text = BASE_URL
+        request.text = CURRENT_REQUEST_URL or BASE_URL
         error = etree.SubElement(root, "error")
         error.set("code", "badVerb")
         error.text = "Bad verb or not implemented"
