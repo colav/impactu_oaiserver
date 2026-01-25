@@ -1,0 +1,14 @@
+.xml-viewer .xml {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
+  font-size: 13px;
+  background: #0f1720;
+  color: #e6edf3;
+  padding: 12px;
+  border-radius: 6px;
+  overflow: auto;
+  line-height: 1.45;
+}
+.xml-tag-name { color: #7dd3fc; }
+.xml-attr-name { color: #fca5a5; }
+.xml-attr-value { color: #bbf7d0; }
+.xml-comment { color: #94a3b8; }
