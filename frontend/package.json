@@ -4,13 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build && next export",
+    "build": "next build",
     "start": "next start -p 3000"
   },
   "dependencies": {
-    "antd": "^5.10.0",
-    "next": "^13.4.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@ant-design/icons": "^6.1.0",
+    "antd": "^6.2.1",
+    "next": "^16.1.4",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
   }
 }

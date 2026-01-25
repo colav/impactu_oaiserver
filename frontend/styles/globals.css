@@ -1,7 +1,56 @@
 html, body, #__next {
   height: 100%;
 }
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, .ant-typography {
+  color: #073b3b !important;
+}
+
+.ant-layout {
+  background: #f5f5f5 !important;
+}
+
+.ant-layout-header {
+  line-height: normal !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+
+.site-footer {
+  background: #e2e6ec !important;
+  padding: 60px 0 !important;
+}
+
+.footer-col-title {
+  font-weight: 700;
+  color: #073b3b;
+  margin-bottom: 24px;
+}
+
+.record-card {
+  border-radius: 12px !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03) !important;
+}
+
+.header-search-compact {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: white;
+}
+
+.header-search-compact:focus-within {
+  border-color: #328181;
+}
+
+.header-search-compact .ant-select-selector,
+.header-search-compact .ant-input {
+  border: none !important;
+  box-shadow: none !important;
 }

@@ -1,63 +1,52 @@
 import React from 'react'
 
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-}
-
-function formatXml(xml) {
-  // simple indentation
-  let formatted = ''
-  const reg = /(>)(<)(\/*)/g
-  xml = xml.replace(reg, '$1\n$2$3')
-  let pad = 0
-  xml.split('\n').forEach((node) => {
-    let indent = 0
-    if (node.match(/.+<\\/)) {
-      indent = 0
-    } else if (node.match(/<\\/)) {
-      indent = 1
-    }
-    if (node.match(/<\\/)) {
-      formatted += '  '.repeat(pad) + node + '\n'
-    } else {
-      formatted += '  '.repeat(pad) + node + '\n'
-    }
-    if (node.match(/<[^\/].*[^\/]>/) && !node.match(/<.*\/\>/)) {
-      pad += 1
-    }
-    if (node.match(/<\/[^>]+>/)) {
-      pad = Math.max(pad - 1, 0)
-    }
-  })
-  return formatted
-}
-
-function highlightXml(xml) {
-  // escape and then add spans for tag names and attributes
-  let out = escapeHtml(xml)
-
-  // highlight tag names: &lt; /?tag ... &gt;
-  out = out.replace(/(&lt;\/?)([A-Za-z0-9_:\-\.]+)([^&]*?)(&gt;)/g, function(_, open, name, rest, close) {
-    // highlight attributes inside rest
-    const attrs = rest.replace(/([A-Za-z0-9_:\-\.]+)(=)(&quot;.*?&quot;|'.*?'|[^\s>]*)/g, '<span class="xml-attr-name">$1</span>$2<span class="xml-attr-value">$3</span>')
-    return `${open}<span class="xml-tag-name">${name}</span>${attrs}${close}`
-  })
-
-  // comments
-  out = out.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="xml-comment">$1</span>')
-  return out
-}
-
 export default function XMLViewer({ xml }) {
-  if (!xml) return <div>No XML selected</div>
-  const pretty = formatXml(xml)
-  const highlighted = highlightXml(pretty)
+  if (!xml) return null
+
+  // Basic XML indentation
+  const formatXML = (xmlString) => {
+    let indent = '';
+    const tab = '  ';
+    let formatted = '';
+    const reg = /(>)(<)(\/*)/g;
+    xmlString = xmlString.replace(reg, '\r\n');
+    let pad = 0;
+    xmlString.split('\r\n').forEach((node) => {
+      let indent = 0;
+      if (node.match(/.+<\/\w[^>]*>$/)) {
+        indent = 0;
+      } else if (node.match(/^<\/\w/)) {
+        if (pad !== 0) {
+          pad -= 1;
+        }
+      } else if (node.match(/^<\w([^>]*[^\/])?>.*$/)) {
+        indent = 1;
+      } else {
+        indent = 0;
+      }
+
+      formatted += tab.repeat(pad) + node + '\r\n';
+      pad += indent;
+    });
+    return formatted.trim();
+  }
+
   return (
-    <div className="xml-viewer">
-      <pre className="xml" dangerouslySetInnerHTML={{ __html: highlighted }} />
+    <div style={{ position: 'relative' }}>
+      <pre style={{ 
+        background: '#1e1e1e', 
+        color: '#d4d4d4', 
+        padding: '20px', 
+        borderRadius: '8px', 
+        overflow: 'auto',
+        fontSize: '13px',
+        lineHeight: '1.5',
+        maxHeight: '600px',
+        border: '1px solid #333',
+        fontFamily: "'Fira Code', 'Consolas', monospace"
+      }}>
+        <code>{formatXML(xml)}</code>
+      </pre>
     </div>
   )
 }
