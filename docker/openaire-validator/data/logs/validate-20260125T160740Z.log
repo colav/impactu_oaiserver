@@ -1,0 +1,82 @@
+JUnit version 4.13.2
+..E..E.E.E.E.E.E.E.E.E.
+Time: 0.23
+There were 10 failures:
+1) check010_MetadataFormats(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: This validator does not cover the metadata namespace https://www.openaire.eu/cerif-profile/1.2 (2g)
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertNotNull(Assert.java:713)
+	at org.eurocris.openaire.cris.validator.CRISValidator$4.test(CRISValidator.java:407)
+	at org.eurocris.openaire.cris.validator.CRISValidator$4.test(CRISValidator.java:393)
+	at org.eurocris.openaire.cris.validator.util.CheckingIterable$MatchCountingIterator.next(CheckingIterable.java:192)
+	at org.eurocris.openaire.cris.validator.util.CheckingIterable$2$1.next(CheckingIterable.java:88)
+	at org.eurocris.openaire.cris.validator.util.CheckingIterable.run(CheckingIterable.java:31)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check010_MetadataFormats(CRISValidator.java:387)
+2) check100_CheckPublications(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check100_CheckPublications(CRISValidator.java:522)
+3) check200_CheckProducts(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check200_CheckProducts(CRISValidator.java:531)
+4) check300_CheckPatents(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check300_CheckPatents(CRISValidator.java:540)
+5) check400_CheckPersons(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check400_CheckPersons(CRISValidator.java:549)
+6) check500_CheckOrgUnits(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check500_CheckOrgUnits(CRISValidator.java:558)
+7) check600_CheckProjects(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check600_CheckProjects(CRISValidator.java:567)
+8) check700_CheckFundings(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check700_CheckFundings(CRISValidator.java:576)
+9) check800_CheckEquipment(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check800_CheckEquipment(CRISValidator.java:585)
+10) check900_CheckEvents(org.eurocris.openaire.cris.validator.CRISValidator)
+java.lang.AssertionError: No metadata prefix to fetch?
+	at org.junit.Assert.fail(Assert.java:89)
+	at org.junit.Assert.assertTrue(Assert.java:42)
+	at org.junit.Assert.assertFalse(Assert.java:65)
+	at org.eurocris.openaire.cris.validator.CRISValidator.checkSetSpec(CRISValidator.java:508)
+	at org.eurocris.openaire.cris.validator.CRISValidator.check900_CheckEvents(CRISValidator.java:594)
+
+FAILURES!!!
+Tests run: 13,  Failures: 10
+

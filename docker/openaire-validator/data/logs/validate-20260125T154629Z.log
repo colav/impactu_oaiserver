@@ -1,0 +1,5 @@
+Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.length()" because "this.input" is null
+	at java.base/java.net.URI$Parser.parse(Unknown Source)
+	at java.base/java.net.URI.<init>(Unknown Source)
+	at java.base/java.net.URI.create(Unknown Source)
+	at org.eurocris.openaire.cris.validator.CRISValidator.main(CRISValidator.java:169)

@@ -18,4 +18,4 @@ dependencies = [
 ]
 
 [project.scripts]
-impactu_oaiserver = "src.app:main"
+impactu_oaiserver = "backend.src.app:main"
