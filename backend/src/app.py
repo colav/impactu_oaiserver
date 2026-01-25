@@ -10,6 +10,8 @@ import traceback
 from xml.sax.saxutils import escape
 
 app = FastAPI()
+import logging as _logging
+_logging.basicConfig(level=_logging.INFO)
 
 
 @app.get("/oai")
@@ -34,9 +36,13 @@ def oai_endpoint(
     try:
         # pass the effective request base URL to the OAI handler so Identify returns matching base
         # prefer X-Forwarded-Host when behind our proxy so Identify/baseURL match proxy
-        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        xf = request.headers.get("x-forwarded-host")
+        host_hdr = request.headers.get("host")
+        host = xf or host_hdr
         scheme = request.url.scheme
         base = f"{scheme}://{host}{request.url.path}"
+        _logging.info(f"OAI incoming headers: X-Forwarded-Host={xf!r}, Host={host_hdr!r}")
+        _logging.info(f"Computed base URL for OAI responses: {base}")
         xml = handle_oai(args, base_url=base)
         return Response(content=xml, media_type="application/xml")
     except Exception as e:

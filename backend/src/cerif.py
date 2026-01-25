@@ -307,34 +307,139 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
     def _add_identifier(parent, xid):
         if not xid:
             return
-        ident = etree.SubElement(parent, "Identifier")
+
+        # normalize id value and detect scheme
         if isinstance(xid, dict):
             vid = xid.get("id") or xid.get("value") or xid.get("_id")
-            if vid is not None:
-                ident.text = str(vid)
             src = xid.get("source") or xid.get("provenance")
-            if src:
-                try:
-                    ident.set("type", str(src))
-                except Exception:
-                    pass
-            else:
-                scheme = _detect_scheme(vid) if vid else None
-                if scheme:
-                    ident.set("type", scheme)
         else:
-            ident.text = str(xid)
-            try:
-                ident.set("type", _detect_scheme(str(xid)) or "other")
-            except Exception:
-                pass
-            # Ensure Identifier always has a type attribute (default 'other')
-            if not ident.get("type"):
-                try:
-                    ident.set("type", "other")
-                except Exception:
-                    pass
-            return ident
+            vid = xid
+            src = None
+        if vid is None:
+            return
+        vid = str(vid)
+        scheme = (src or _detect_scheme(vid) or "other").lower()
+
+        # map schemes to concrete CERIF element names expected by the XSD (publications)
+        mapping = {
+            "doi": "DOI",
+            "handle": "Handle",
+            "pmcid": "PMCID",
+            "pmid": "PMID",
+            "issn": "ISSN",
+            "isbn": "ISBN",
+            "url": "URL",
+            "urn": "URN",
+            "zdb": "ZDB-ID",
+            "openalex": "URL",
+            "mag": "Identifier",
+        }
+        tag = mapping.get(scheme)
+        if tag is None:
+            # fallback: pick URL if it looks like one, otherwise generic Identifier
+            tag = "URL" if vid.startswith("http") else "Identifier"
+
+        # normalize some identifier values for compliance with XSD simpleTypes
+        if tag == "DOI":
+            # DOI__SimpleType expects the canonical DOI (e.g. 10.1234/abcd)
+            m = re.search(r"10\.[0-9]+\/.+", vid)
+            if m:
+                vid = m.group(0)
+            else:
+                # try to strip common doi URL prefixes
+                vid = re.sub(r"^https?://(dx\.)?doi\.org/", "", vid, flags=re.I)
+
+        el = etree.SubElement(parent, tag)
+        el.text = vid
+        # if we emitted a generic Identifier element, ensure it has the required
+        # `type` attribute (cfGenericIdentifier__Type requires @type anyURI)
+        if tag == "Identifier":
+            type_uri = None
+            # try to form a reasonable type URI from scheme or source
+            if scheme in ("doi", "handle"):
+                type_uri = f"https://w3id.org/cerif/vocab/IdentifierTypes#{scheme.upper()}"
+            elif scheme in ("issn", "isbn"):
+                type_uri = f"https://w3id.org/cerif/vocab/IdentifierTypes#{scheme.upper()}"
+            elif scheme:
+                slug = re.sub(r'[^a-z0-9]+', '-', scheme.lower())
+                type_uri = f"https://example.org/identifier-scheme/{slug}"
+            else:
+                type_uri = "urn:cerif:identifier:unknown"
+            el.set("type", type_uri)
+        return el
+
+    def _add_person_identifier(parent, xid):
+        # identifiers allowed in PersonIdentifers__Group: ORCID, AlternativeORCID, ResearcherID, ScopusAuthorID, ISNI, DAI, Identifier, ElectronicAddress
+        if not xid:
+            return
+        if isinstance(xid, dict):
+            vid = xid.get("id") or xid.get("value") or xid.get("_id")
+            src = (xid.get("source") or xid.get("provenance") or "").lower()
+        else:
+            vid = str(xid)
+            src = ""
+        if not vid:
+            return
+        vid = str(vid)
+        scheme = src or _detect_scheme(vid)
+        scheme = (scheme or "").lower()
+        person_map = {
+            "orcid": "ORCID",
+            "isni": "ISNI",
+            "scopus": "ScopusAuthorID",
+            "researcherid": "ResearcherID",
+        }
+        tag = person_map.get(scheme)
+        if not tag:
+            # URLs as electronic addresses
+            if vid.startswith("http"):
+                tag = "ElectronicAddress"
+            else:
+                tag = "Identifier"
+        el = etree.SubElement(parent, tag)
+        el.text = vid
+        if tag == "Identifier":
+            # ensure required @type, slugify scheme to create valid URI fragment
+            s = (scheme or 'unknown').lower()
+            slug = re.sub(r'[^a-z0-9]+', '-', s)
+            type_uri = f"https://example.org/identifier-scheme/{slug}"
+            el.set("type", type_uri)
+        return el
+        return el
+
+    def _add_org_identifier(parent, xid):
+        # identifiers allowed in OrgUnitIdentifiers__Group: RORID, GRID, ISNI, Identifier, ElectronicAddress, FundRefID, etc.
+        if not xid:
+            return
+        if isinstance(xid, dict):
+            vid = xid.get("id") or xid.get("value") or xid.get("_id")
+            src = (xid.get("source") or xid.get("provenance") or "").lower()
+        else:
+            vid = str(xid)
+            src = ""
+        if not vid:
+            return
+        vid = str(vid)
+        scheme = src or _detect_scheme(vid)
+        scheme = (scheme or "").lower()
+        org_map = {
+            "ror": "RORID",
+            "grid": "GRID",
+            "isni": "ISNI",
+        }
+        tag = org_map.get(scheme)
+        if not tag:
+            if vid.startswith("http"):
+                tag = "ElectronicAddress"
+            else:
+                tag = "Identifier"
+        el = etree.SubElement(parent, tag)
+        el.text = vid
+        if tag == "Identifier":
+            type_uri = f"https://example.org/identifier-scheme/{scheme or 'unknown'}"
+            el.set("type", type_uri)
+        return el
+        return el
 
     if local_name == "Publication":
         titles = doc.get("titles") or doc.get("names") or []
@@ -349,12 +454,8 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         else:
             t = doc.get("title") or doc.get("name")
             _add_title(top, t)
+        # collect abstract and identifiers, but emit them after PublicationDate to match OpenAIRE ordering
         abs_ = doc.get("abstracts") or doc.get("descriptions") or doc.get("abstract")
-        if isinstance(abs_, list):
-            _add_abstract(top, abs_[0] if abs_ else None)
-        else:
-            _add_abstract(top, abs_)
-        # delay identifiers until after PublicationDate to match OpenAIRE ordering
         identifiers = list(doc.get("external_ids") or doc.get("identifiers") or [])
         pubdate = None
         if doc.get("publication_date"):
@@ -367,9 +468,35 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         if pubdate:
             pd = etree.SubElement(top, "PublicationDate")
             pd.text = str(pubdate)
-            # now emit identifiers after publication date
+            # emit bibliographic fields that come before the publication identifiers
+            bib = doc.get("bibliographic_info") or {}
+            # common keys: number, volume, issue, edition, start_page, end_page
+            num = doc.get("number") or bib.get("number")
+            vol = doc.get("volume") or bib.get("volume")
+            iss = doc.get("issue") or bib.get("issue")
+            ed = doc.get("edition") or bib.get("edition")
+            sp = doc.get("start_page") or bib.get("start_page") or bib.get("page_start") or None
+            ep = doc.get("end_page") or bib.get("end_page") or bib.get("page_end") or None
+            if num:
+                _text(top, "Number", num)
+            if vol:
+                _text(top, "Volume", vol)
+            if iss:
+                _text(top, "Issue", iss)
+            if ed:
+                _text(top, "Edition", ed)
+            if sp:
+                _text(top, "StartPage", sp)
+            if ep:
+                _text(top, "EndPage", ep)
+
         for xid in identifiers:
             _add_identifier(top, xid)
+        # emit abstract after PublicationDate+Identifiers to follow XSD ordering
+        if isinstance(abs_, list):
+            _add_abstract(top, abs_[0] if abs_ else None)
+        else:
+            _add_abstract(top, abs_)
 
     elif local_name == "Person":
         pn = etree.SubElement(top, "PersonName")
@@ -388,7 +515,7 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
             ff = etree.SubElement(pn, "FirstNames")
             ff.text = str(first)
         for xid in doc.get("external_ids") or doc.get("identifiers") or []:
-            _add_identifier(top, xid)
+            _add_person_identifier(top, xid)
 
     elif local_name == "OrgUnit":
         names = doc.get("names") or doc.get("name")
@@ -406,6 +533,6 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
             n.text = str(names)
             n.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
         for xid in doc.get("external_ids") or doc.get("identifiers") or []:
-            _add_identifier(top, xid)
+            _add_org_identifier(top, xid)
 
     return top

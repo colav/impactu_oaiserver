@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-# Sequential validator harness (safe for local debugging).
+# Sequential validator harness for local debugging.
 # Usage: parallel_validate.sh ENDPOINT
 
 ENDPOINT="${1:-http://localhost:8000/oai}"
@@ -16,6 +16,9 @@ fi
 
 if [ ! -s "$tmpfile" ]; then
   echo "ListSets returned empty — running single validator against $ENDPOINT"
+  mkdir -p "$ROOT/data/logs"
+  # remove only logs owned by current user to avoid permission errors
+  find "$ROOT/data/logs" -maxdepth 1 -type f -user "$(whoami)" -exec rm -f {} + || true
   VALIDATOR_ENDPOINT="$ENDPOINT" docker compose run --rm openaire-validator || true
   rm -f "$tmpfile"
   exit 0
@@ -56,17 +59,27 @@ for set in $(echo "$sets"); do
   echo "proxy pid=$proxy_pid (log=$tmp_proxy_log)"
 
   echo "Running validator for set=$set against http://127.0.0.1:$port/oai"
-  VALIDATOR_ENDPOINT="http://127.0.0.1:$port/oai" docker compose run --rm openaire-validator || rc=$?
-  rc=${rc:-0}
+  mkdir -p "$ROOT/data/logs"
+  find "$ROOT/data/logs" -maxdepth 1 -type f -user "$(whoami)" -exec rm -f {} + || true
+  VALIDATOR_ENDPOINT="http://127.0.0.1:$port/oai" docker compose run --rm openaire-validator
+  rc=$?
   echo "Validator exit=$rc"
   if [ "$rc" -ne 0 ]; then overall_rc=1; fi
 
-  latest_log=$(ls -t "$ROOT/data/logs" | head -n1 || true)
-  echo "Latest validator log: $ROOT/data/logs/$latest_log"
+  latest_log=$(ls -t "$ROOT/data/logs" 2>/dev/null | head -n1 || true)
+  if [ -n "$latest_log" ]; then
+    echo "Latest validator log: $ROOT/data/logs/$latest_log"
+    echo "--- begin log ---"
+    sed -n '1,200p' "$ROOT/data/logs/$latest_log" || true
+    echo "--- end log ---"
+  else
+    echo "No validator log found in $ROOT/data/logs"
+  fi
 
   echo "Stopping proxy pid=$proxy_pid"
   kill "$proxy_pid" >/dev/null 2>&1 || true
-  sleep 1
+  wait "$proxy_pid" 2>/dev/null || true
+
   i=$((i+1))
 done
 
@@ -76,7 +89,7 @@ exit "$overall_rc"
 #!/usr/bin/env sh
 set -eu
 
-# Parallel validator harness.
+# Sequential validator harness (safe for local debugging).
 # Usage: parallel_validate.sh ENDPOINT [CONCURRENCY]
 
 ENDPOINT="${1:-http://localhost:8000/oai}"
@@ -141,6 +154,8 @@ for set in $(echo "$sets"); do
   proxy_pid=$!
   # run validator against proxy
   echo "Launching validator for set=$set"
+  mkdir -p "$ROOT/data/logs"
+  find "$ROOT/data/logs" -maxdepth 1 -type f -user "$(whoami)" -exec rm -f {} + || true
   ( VALIDATOR_ENDPOINT="http://127.0.0.1:$port/oai" docker compose run --rm openaire-validator ) &
   vid=$!
 
@@ -160,3 +175,7 @@ done
 wait || true
 echo "All validator runs completed"
 rm -f "$tmpfile"
+done
+
+rm -f "$tmpfile"
+echo "All validator runs completed"
