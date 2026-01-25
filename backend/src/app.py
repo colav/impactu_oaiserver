@@ -4,6 +4,9 @@ from .oai import handle_oai, OAI_COLLECTIONS
 from .mongo_client import get_db
 import os
 import uvicorn
+import logging
+import traceback
+from xml.sax.saxutils import escape
 
 app = FastAPI()
 
@@ -26,8 +29,23 @@ def oai_endpoint(
         "set": set,
     }
     args = {k: v for k, v in args.items() if v is not None}
-    xml = handle_oai(args)
-    return Response(content=xml, media_type="application/xml")
+    try:
+        xml = handle_oai(args)
+        return Response(content=xml, media_type="application/xml")
+    except Exception as e:
+        # log full traceback and return a valid OAI-PMH XML error response
+        logging.exception("Unhandled error in OAI endpoint")
+        tb = traceback.format_exc()
+        logging.error(tb)
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">'
+            "<error>"
+            + escape(str(e))
+            + "</error>"
+            + "</OAI-PMH>"
+        )
+        return Response(content=body, media_type="application/xml", status_code=500)
 
 
 @app.get("/stats")
