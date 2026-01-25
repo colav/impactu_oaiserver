@@ -6,15 +6,24 @@ set -eu
 
 ENDPOINT="${1:-http://localhost:8000/oai}"
 CONCURRENCY="${2:-4}"
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROXY_SCRIPT="$ROOT/harness/proxy_single_set.py"
-
-tmpfile="/tmp/openaire_sets_$$.xml"
-echo "Fetching sets from: $ENDPOINT"
-if ! curl -sSf "$ENDPOINT?verb=ListSets" > "$tmpfile"; then
-  echo "Warning: ListSets failed or returned non-2xx; falling back to single run" >&2
-fi
-
+  port=$((port_base + i))
+  mkdir -p "$ROOT/data/logs"
+  echo "Starting proxy for set=$set on port $port"
+  python3 "$PROXY_SCRIPT" --target "$ENDPOINT" --set "$set" --port "$port" > "$ROOT/data/logs/proxy-$set.log" 2>&1 &
+  proxy_pid=$!
+  echo "Launched proxy (pid=$proxy_pid)"
+  
+  echo "Running validator for set=$set against http://127.0.0.1:$port/oai"
+  VALIDATOR_ENDPOINT="http://127.0.0.1:$port/oai" docker compose run --rm openaire-validator || rc=$?
+  rc=${rc:-$?}
+  echo "Validator exit=$rc; logs: /opt/openaire/logs/"$(ls -t data/logs | head -n1)""
+  
+  # kill proxy
+  if kill "$proxy_pid" >/dev/null 2>&1; then
+    echo "Stopped proxy (pid=$proxy_pid)"
+  fi
+  
+  i=$((i+1))
 if [ ! -s "$tmpfile" ]; then
   echo "ListSets returned empty — running single validator against $ENDPOINT"
   VALIDATOR_ENDPOINT="$ENDPOINT" docker compose run --rm openaire-validator || true

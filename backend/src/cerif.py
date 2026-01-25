@@ -223,9 +223,8 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
     default_coar = coar_defaults.get(local_name)
     if default_coar and local_name in vocab_map:
         try:
-            vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
-            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
-            # place COAR URI value (no extra attributes)
+            # Type must be in the OpenAIRE namespace (not the vocab namespace)
+            typ = etree.SubElement(top, "{" + openaire_ns + "}Type")
             typ.text = default_coar
         except Exception:
             pass
@@ -349,8 +348,8 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
             _add_abstract(top, abs_[0] if abs_ else None)
         else:
             _add_abstract(top, abs_)
-        for xid in doc.get("external_ids") or doc.get("identifiers") or []:
-            _add_identifier(top, xid)
+        # delay identifiers until after PublicationDate to match OpenAIRE ordering
+        identifiers = list(doc.get("external_ids") or doc.get("identifiers") or [])
         pubdate = None
         if doc.get("publication_date"):
             pubdate = doc.get("publication_date")
@@ -362,6 +361,9 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         if pubdate:
             pd = etree.SubElement(top, "PublicationDate")
             pd.text = str(pubdate)
+            # now emit identifiers after publication date
+        for xid in identifiers:
+            _add_identifier(top, xid)
 
     elif local_name == "Person":
         pn = etree.SubElement(top, "PersonName")
