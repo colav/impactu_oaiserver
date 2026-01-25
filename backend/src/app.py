@@ -4,6 +4,7 @@ from .oai import handle_oai, OAI_COLLECTIONS
 from .mongo_client import get_db
 import os
 import uvicorn
+import argparse
 import logging
 import traceback
 from xml.sax.saxutils import escape
@@ -65,7 +66,13 @@ def stats():
 
 
 def main() -> None:
-    port = int(os.environ.get("PORT", 8000))
+    p = argparse.ArgumentParser()
+    p.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8000)))
+    p.add_argument("--validation", type=int, default=None, help="Limit number of documents served for validation")
+    args = p.parse_args()
+    port = args.port
+    if args.validation is not None:
+        os.environ["OAI_VALIDATION_LIMIT"] = str(args.validation)
     uvicorn.run("backend.src.app:app", host="0.0.0.0", port=port)
 
 

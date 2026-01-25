@@ -118,13 +118,19 @@ def _decode_token(token: str) -> Dict[str, Any]:
 
 
 def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionToken: Optional[str] = None, pageSize: int = 100, setSpec: Optional[str] = None):
-    state = {"coll_index": 0, "last_id": None}
+    state = {"coll_index": 0, "last_id": None, "served": 0}
     if resumptionToken:
         dec = _decode_token(resumptionToken)
         if isinstance(dec, dict):
             state.update(dec)
     start_index = int(state.get("coll_index", 0))
     last_id = state.get("last_id")
+    served = int(state.get("served") or 0)
+    # validation limit across the whole harvest (0 = unlimited)
+    try:
+        validation_limit = int(os.environ.get("OAI_VALIDATION_LIMIT", "0") or 0)
+    except Exception:
+        validation_limit = 0
 
     root = _oai_root()
     responseDate = etree.SubElement(root, "responseDate")
@@ -149,6 +155,11 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
         allowed_collections = set_to_col.get(setSpec)
     coll_idx = start_index
     remaining = pageSize
+    if validation_limit > 0:
+        remaining = min(remaining, max(0, validation_limit - served))
+        if remaining <= 0:
+            # return empty ListRecords with no resumptionToken
+            return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     last_seen = None
     while coll_idx < len(OAI_COLLECTIONS) and remaining > 0:
         coll_name = OAI_COLLECTIONS[coll_idx]
@@ -173,6 +184,10 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
             cerif_el = doc_to_cerif_element(doc, collection=coll_name, metadataPrefix=metadataPrefix)
             metadata.append(cerif_el)
             last_seen = (coll_name, doc.get("_id"))
+            served += 1
+            # stop early if we've hit the validation limit
+            if validation_limit > 0 and served >= validation_limit:
+                break
         if len(docs) < remaining:
             coll_idx += 1
             last_id = None
@@ -198,6 +213,8 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
                     break
 
     if has_more and next_state:
+        # include served count in the resumption token so the validation limit is enforced across pages
+        next_state["served"] = served
         token = _encode_token(next_state)
         rt = etree.SubElement(listRecords, "resumptionToken")
         rt.text = token
@@ -206,13 +223,18 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
 
 
 def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, pageSize: int = 100):
-    state = {"coll_index": 0, "last_id": None}
+    state = {"coll_index": 0, "last_id": None, "served": 0}
     if resumptionToken:
         dec = _decode_token(resumptionToken)
         if isinstance(dec, dict):
             state.update(dec)
     start_index = int(state.get("coll_index", 0))
     last_id = state.get("last_id")
+    served = int(state.get("served") or 0)
+    try:
+        validation_limit = int(os.environ.get("OAI_VALIDATION_LIMIT", "0") or 0)
+    except Exception:
+        validation_limit = 0
 
     root = _oai_root()
     responseDate = etree.SubElement(root, "responseDate")
@@ -223,6 +245,10 @@ def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, p
 
     coll_idx = start_index
     remaining = pageSize
+    if validation_limit > 0:
+        remaining = min(remaining, max(0, validation_limit - served))
+        if remaining <= 0:
+            return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     last_seen = None
     while coll_idx < len(OAI_COLLECTIONS) and remaining > 0:
         coll_name = OAI_COLLECTIONS[coll_idx]
@@ -244,6 +270,9 @@ def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, p
             raw = (doc.get("updated") or [{}])[-1].get("time") if isinstance(doc.get("updated"), list) and doc.get("updated") else doc.get("date") or None
             datestamp.text = _format_datestamp(raw)
             last_seen = (coll_name, doc.get("_id"))
+            served += 1
+            if validation_limit > 0 and served >= validation_limit:
+                break
         if len(docs) < remaining:
             coll_idx += 1
             last_id = None
@@ -269,6 +298,7 @@ def ListIdentifiers_with_pagination(db, resumptionToken: Optional[str] = None, p
                     break
 
     if has_more and next_state:
+        next_state["served"] = served
         token = _encode_token(next_state)
         rt = etree.SubElement(listIds, "resumptionToken")
         rt.text = token
