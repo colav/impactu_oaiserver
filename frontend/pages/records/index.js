@@ -146,9 +146,21 @@ export default function Records() {
 
       const findInDoc = (tagName) => {
         const lower = tagName.toLowerCase();
-        return Array.from(xmlDoc.getElementsByTagName('*')).filter(n => 
-          (n.localName?.toLowerCase() === lower || n.nodeName.split(':').pop().toLowerCase() === lower)
-        );
+        // Try getElementsByTagNameNS for robust namespace-agnostic search
+        try {
+          const nsNodes = xmlDoc.getElementsByTagNameNS("*", tagName);
+          if (nsNodes.length > 0) return Array.from(nsNodes);
+        } catch(e) {}
+
+        // Fallback to getElementsByTagName
+        const tagNodes = xmlDoc.getElementsByTagName(tagName);
+        if (tagNodes.length > 0) return Array.from(tagNodes);
+
+        // Ultimate fallback: manually filter every element
+        return Array.from(xmlDoc.querySelectorAll('*')).filter(n => {
+          const nodeName = n.localName || n.nodeName.split(':').pop();
+          return nodeName.toLowerCase() === lower;
+        });
       };
 
       const oaiError = findInDoc('error')[0];
@@ -158,9 +170,13 @@ export default function Records() {
           message: oaiError.textContent
         })
         setTotalCount(0)
+        setRecords([])
         return
       }
 
+      const recordNodes = findInDoc('record');
+      console.log(`Found ${recordNodes.length} records`);
+      
       const rtNode = findInDoc('resumptionToken')[0];
       if (rtNode) {
         setResumptionToken(rtNode.textContent?.trim() || null)
@@ -168,11 +184,15 @@ export default function Records() {
         setCursor(parseInt(rtNode.getAttribute('cursor') || '0'))
       } else {
         setResumptionToken(null)
-        setTotalCount(0)
+        // If no token but we have records, use records.length as total for this page
+        if (recordNodes.length > 0) {
+          setTotalCount(recordNodes.length);
+          setCursor(0);
+        } else {
+          setTotalCount(0);
+        }
       }
 
-      const recordNodes = findInDoc('record');
-      console.log(`Found ${recordNodes.length} records`);
       setRecords(recordNodes.map(parseRecord))
     } catch (err) {
       console.error('OAI Fetch Error:', err)
