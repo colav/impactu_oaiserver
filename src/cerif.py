@@ -120,6 +120,82 @@ def _emit_person_entity(db, person_ref) -> etree._Element:
     return cent
 
 
+def _emit_org_entity(db, aff_ref) -> etree._Element:
+    """Return a cfEntity element for an organization/affiliation given a reference.
+
+    Fetches from `affiliations` collection when possible. Returns None if not found.
+    """
+    aid = None
+    if isinstance(aff_ref, dict):
+        aid = aff_ref.get("id") or aff_ref.get("_id")
+    else:
+        aid = aff_ref
+    if not aid:
+        return None
+    coll_name = "affiliations"
+    if coll_name not in db.list_collection_names():
+        return None
+    org_doc = db[coll_name].find_one({"_id": aid})
+    if not org_doc:
+        return None
+    oent = etree.Element("cfEntity")
+    _text(oent, "cfEntityId", org_doc.get("_id") or org_doc.get("id"))
+    _text(oent, "cfEntityType", "OrganizationUnit")
+    # names
+    names = org_doc.get("names") or org_doc.get("names") or []
+    if isinstance(names, dict):
+        names = [names]
+    for n in names:
+        ne = etree.SubElement(oent, "cfName")
+        if isinstance(n, dict):
+            _text(ne, "name", n.get("name"))
+        else:
+            ne.text = str(n)
+    # identifiers
+    for xid in org_doc.get("external_ids") or org_doc.get("identifiers") or []:
+        _emit_identifier(oent, xid)
+    # optional address/contact
+    if org_doc.get("country"):
+        _text(oent, "cfCountry", org_doc.get("country"))
+    return oent
+
+
+def _normalize_result_subtype(doc: dict) -> str:
+    """Return a normalized subtype string for the work (book, book-chapter, thesis, article, patent, other)."""
+    types = doc.get("types") or []
+    if isinstance(types, dict):
+        types = [types]
+    # types can be dicts with 'type' or strings
+    candidates = []
+    for t in types:
+        if isinstance(t, dict):
+            v = t.get("type") or t.get("source")
+        else:
+            v = t
+        if v:
+            candidates.append(str(v).lower())
+    bib = doc.get("bibliographic_info") or {}
+    # simple heuristics
+    for c in candidates:
+        if "thesis" in c or "dissertation" in c:
+            return "thesis"
+        if "book-chapter" in c or "chapter" in c:
+            return "book-chapter"
+        if "book" in c and "chapter" not in c:
+            return "book"
+        if "patent" in c:
+            return "patent"
+        if "article" in c or "journal" in c:
+            return "article"
+    # fallback: inspect bibliographic_info
+    if bib and (bib.get("isbn") or bib.get("publisher") or bib.get("book_title") or bib.get("in_book")):
+        # if chapter indicator present
+        if bib.get("chapter") or bib.get("chapterNumber") or bib.get("in_book"):
+            return "book-chapter"
+        return "book"
+    return "other"
+
+
 def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Element:
     """Map a MongoDB document into a reasonably rich CERIF-like XML element.
 
@@ -134,6 +210,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Elemen
 
     _text(ent, "cfEntityId", doc.get("_id") or doc.get("id"))
     _text(ent, "cfEntityType", collection)
+    # normalized subtype (article, book, book-chapter, thesis, patent, other)
+    subtype = _normalize_result_subtype(doc)
+    if subtype and subtype != "other":
+        _text(ent, "cfEntitySubtype", subtype)
 
     # Titles / names
     titles = doc.get("titles") or doc.get("names") or []
@@ -207,6 +287,25 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Elemen
     for u in updated:
         _emit_date(ent, u)
 
+    # bibliographic_info -> structured fields
+    bib = doc.get("bibliographic_info") or {}
+    if bib:
+        bib_el = etree.SubElement(ent, "cfBibliographic")
+        if bib.get("publisher"):
+            _text(bib_el, "publisher", bib.get("publisher"))
+        if bib.get("volume"):
+            _text(bib_el, "volume", bib.get("volume"))
+        if bib.get("issue"):
+            _text(bib_el, "issue", bib.get("issue"))
+        if bib.get("start_page") or bib.get("end_page") or bib.get("pages"):
+            _text(bib_el, "pages", bib.get("pages") or (str(bib.get("start_page")) + "-" + str(bib.get("end_page")) if bib.get("start_page") and bib.get("end_page") else None))
+        if bib.get("isbn"):
+            _text(bib_el, "isbn", bib.get("isbn"))
+        if bib.get("issn"):
+            _text(bib_el, "issn", bib.get("issn"))
+        if bib.get("chapter") or bib.get("chapterNumber"):
+            _text(bib_el, "chapterNumber", bib.get("chapter") or bib.get("chapterNumber"))
+
     # Authors / persons -> try to resolve person entities and emit relations
     authors = doc.get("authors") or doc.get("creators") or []
     if isinstance(authors, dict):
@@ -241,6 +340,22 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Elemen
                         _text(rel, "to", f"{collection}:{doc.get('_id')}")
                         _text(rel, "role", a.get("role") or "Author")
                         _text(rel, "order", order)
+                        # also emit affiliations as OrganizationUnit entities and relations
+                        if a.get("affiliations"):
+                            for af in a.get("affiliations"):
+                                org_ent = _emit_org_entity(db, af)
+                                if org_ent is not None:
+                                    wrapper.append(org_ent)
+                                    # relation person -> org
+                                    rel_po = etree.SubElement(ent, "cfRelation")
+                                    _text(rel_po, "from", f"person:{a.get('id')}")
+                                    _text(rel_po, "to", f"org:{org_ent.findtext('cfEntityId')}")
+                                    _text(rel_po, "role", "affiliatedTo")
+                                    # relation work -> org
+                                    rel_wo = etree.SubElement(ent, "cfRelation")
+                                    _text(rel_wo, "from", f"org:{org_ent.findtext('cfEntityId')}")
+                                    _text(rel_wo, "to", f"{collection}:{doc.get('_id')}")
+                                    _text(rel_wo, "role", "hostOrganization")
             else:
                 c.text = str(a)
             order += 1
