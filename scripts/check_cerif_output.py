@@ -6,8 +6,8 @@ Usage: python scripts/check_cerif_output.py
 import sys
 import json
 from lxml import etree
-from src.mongo_client import get_collection
-from src.cerif import doc_to_cerif_element
+from backend.src.mongo_client import get_collection
+from backend.src.cerif import doc_to_cerif_element
 
 
 def main():

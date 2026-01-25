@@ -1,15 +1,16 @@
-from backend.src.oai import *
+from lxml import etree
+import os
+from .mongo_client import get_db
+from .cerif import doc_to_cerif_element
+import datetime
+from typing import Optional, Dict, Any
+import json
+import base64
 
 
 def _format_datestamp(raw):
-    """Normalize possible datestamp values to ISO UTC string expected by validator.
-
-    Accepts epoch seconds (int or digit-string), or already ISO strings.
-    Returns empty string on None or invalid.
-    """
     if raw is None:
         return ""
-    # numeric epoch seconds
     try:
         if isinstance(raw, (int, float)) or (isinstance(raw, str) and raw.isdigit()):
             import datetime as _dt
@@ -18,7 +19,6 @@ def _format_datestamp(raw):
             return _dt.datetime.utcfromtimestamp(epoch).isoformat() + "Z"
     except Exception:
         pass
-    # if already looks like ISO datetime, return it
     try:
         if isinstance(raw, str) and ("T" in raw or "-" in raw):
             return raw if raw.endswith("Z") else raw + "Z"
@@ -26,15 +26,13 @@ def _format_datestamp(raw):
         pass
     return ""
 
+
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 
-# Repository identifier used in OAI identifiers and Identify
 REPO_IDENTIFIER = "impactu.colav.co"
 
-# Base URL for the OAI endpoint (can be overridden via env)
 BASE_URL = os.environ.get("OAI_BASE_URL", "http://localhost:8000/oai")
 
-# Collections served by the OAI-PMH endpoints (order matters for ListRecords)
 OAI_COLLECTIONS = [
     "works",
     "patents",
@@ -64,7 +62,6 @@ def identify():
     baseURL.text = BASE_URL
     protocolVersion = etree.SubElement(identify, "protocolVersion")
     protocolVersion.text = "2.0"
-    # Required elements per OAI-PMH Identify response
     adminEmail = etree.SubElement(identify, "adminEmail")
     adminEmail.text = "grupocolav@udea.edu.co"
     earliestDatestamp = etree.SubElement(identify, "earliestDatestamp")
@@ -73,22 +70,18 @@ def identify():
     deletedRecord.text = "no"
     granularity = etree.SubElement(identify, "granularity")
     granularity.text = "YYYY-MM-DDThh:mm:ssZ"
-    # Add a description with an oai-identifier element (required by some validators)
     desc = etree.SubElement(identify, "description")
     oi_ns = "http://www.openarchives.org/OAI/2.0/oai-identifier"
     oai_id = etree.SubElement(desc, "{" + oi_ns + "}oai-identifier")
     s = etree.SubElement(oai_id, "{" + oi_ns + "}scheme")
     s.text = "oai"
     repo_id = etree.SubElement(oai_id, "{" + oi_ns + "}repositoryIdentifier")
-    # repositoryIdentifier should match service Acronym per validator expectations
     repo_id.text = REPO_IDENTIFIER
     delimiter = etree.SubElement(oai_id, "{" + oi_ns + "}delimiter")
     delimiter.text = ":"
     sample = etree.SubElement(oai_id, "{" + oi_ns + "}sampleIdentifier")
     sample.text = f"oai:{REPO_IDENTIFIER}:12345"
-    # Add a Service description in the OpenAIRE CERIF namespace with Acronym
     desc2 = etree.SubElement(identify, "description")
-    # use a versioned CERIF namespace that the validator recognizes
     openaire_ns = "https://www.openaire.eu/cerif-profile/1.2/"
     service = etree.SubElement(desc2, "{" + openaire_ns + "}Service", id="Service")
     acronym = etree.SubElement(service, "{" + openaire_ns + "}Acronym")
@@ -99,7 +92,6 @@ def identify():
 def _doc_header(record_el, collection: str, doc: dict):
     header = etree.SubElement(record_el, "header")
     identifier = etree.SubElement(header, "identifier")
-    # use OAI identifier form expected by validator: oai:<repositoryIdentifier>:<id>
     identifier.text = f"oai:{REPO_IDENTIFIER}:{doc.get('_id')}"
     datestamp = etree.SubElement(header, "datestamp")
     raw = (doc.get("updated") or [{}])[-1].get("time") if isinstance(doc.get("updated"), list) and doc.get("updated") else doc.get("date") or doc.get("year") or None
@@ -141,7 +133,6 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
     request.text = BASE_URL
     listRecords = etree.SubElement(root, "ListRecords")
 
-    # If a setSpec was requested, map it to the corresponding collection(s)
     set_to_col = {
         "openaire_cris_publications": ["works"],
         "openaire_cris_products": ["sources"],
@@ -161,7 +152,6 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
     last_seen = None
     while coll_idx < len(OAI_COLLECTIONS) and remaining > 0:
         coll_name = OAI_COLLECTIONS[coll_idx]
-        # skip collections that are not part of requested set (if setSpec provided)
         if allowed_collections is not None and coll_name not in allowed_collections:
             coll_idx += 1
             last_id = None
@@ -323,14 +313,12 @@ def handle_oai(args):
     if verb == "Identify":
         return identify()
     elif verb == "ListMetadataFormats":
-        # Provide OpenAIRE CERIF metadataFormat entries for versions the validator expects
         root = _oai_root()
         responseDate = etree.SubElement(root, "responseDate")
         responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
         request = etree.SubElement(root, "request")
         request.text = BASE_URL
         lm = etree.SubElement(root, "ListMetadataFormats")
-        # version 1.2
         mf1 = etree.SubElement(lm, "metadataFormat")
         mp1 = etree.SubElement(mf1, "metadataPrefix")
         mp1.text = "oai_cerif_openaire_1.2"
@@ -338,7 +326,6 @@ def handle_oai(args):
         schema1.text = "https://www.openaire.eu/schema/cris/1.2/openaire-cerif-profile.xsd"
         mn1 = etree.SubElement(mf1, "metadataNamespace")
         mn1.text = "https://www.openaire.eu/cerif-profile/1.2/"
-        # version 1.1.1 (older)
         mf2 = etree.SubElement(lm, "metadataFormat")
         mp2 = etree.SubElement(mf2, "metadataPrefix")
         mp2.text = "oai_cerif_openaire_1.1.1"
@@ -348,14 +335,12 @@ def handle_oai(args):
         mn2.text = "https://www.openaire.eu/cerif-profile/1.1.1/"
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     elif verb == "ListSets":
-        # Return a set list covering OpenAIRE expected setSpecs (may be empty collections)
         root = _oai_root()
         responseDate = etree.SubElement(root, "responseDate")
         responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
         request = etree.SubElement(root, "request")
         request.text = "http://localhost:8000/oai"
         ls = etree.SubElement(root, "ListSets")
-        # pairs of (setSpec, setName)
         sets = [
             ("openaire_cris_publications", "OpenAIRE_CRIS_publications"),
             ("openaire_cris_products", "OpenAIRE_CRIS_products"),
