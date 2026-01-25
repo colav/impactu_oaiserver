@@ -207,11 +207,20 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Elemen
         "Equipment": "COAR_Equipment_Types",
         "Funding": "COAR_Funding_Types",
     }
-    if local_name in vocab_map:
-        vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
+    # Add a Type element in the OpenAIRE namespace with a COAR URI default
+    coar_defaults = {
+        "Publication": "http://purl.org/coar/resource_type/c_0040",
+        "Product": "http://purl.org/coar/resource_type/ACF7-8YT9",
+        "Patent": "http://purl.org/coar/resource_type/c_15cd",
+        "Project": "http://purl.org/coar/resource_type/c_71bd",
+        "Equipment": "http://purl.org/coar/resource_type/c_18gh",
+        "Funding": "http://purl.org/coar/resource_type/c_18cf",
+    }
+    default_coar = coar_defaults.get(local_name)
+    if default_coar:
         try:
-            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
-            typ.text = "Other"
+            typ = etree.SubElement(top, "{" + openaire_ns + "}Type")
+            typ.text = default_coar
         except Exception:
             pass
 
@@ -238,23 +247,19 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Elemen
         if isinstance(xid, dict):
             vid = xid.get("id") or xid.get("value") or xid.get("_id")
             if vid is not None:
-                v = etree.SubElement(ident, "id")
-                v.text = str(vid)
+                ident.text = str(vid)
             src = xid.get("source") or xid.get("provenance")
             if src:
                 try:
                     ident.set("type", str(src))
                 except Exception:
                     pass
-                s = etree.SubElement(ident, "Source")
-                s.text = str(src)
             else:
                 scheme = _detect_scheme(vid) if vid else None
                 if scheme:
                     ident.set("type", scheme)
         else:
-            v = etree.SubElement(ident, "id")
-            v.text = str(xid)
+            ident.text = str(xid)
             try:
                 ident.set("type", _detect_scheme(str(xid)) or "other")
             except Exception:
