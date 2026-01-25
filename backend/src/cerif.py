@@ -178,9 +178,13 @@ def _normalize_result_subtype(doc: dict) -> str:
     return "other"
 
 
-def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Element:
+def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: str = "oai_cerif_openaire_1.2") -> etree._Element:
     db = get_db()
-    openaire_ns = "https://www.openaire.eu/cerif-profile/1.2/"
+    # Choose OpenAIRE namespace based on requested metadataPrefix
+    if isinstance(metadataPrefix, str) and "1.1.1" in metadataPrefix:
+        openaire_ns = "https://www.openaire.eu/cerif-profile/1.1.1/"
+    else:
+        openaire_ns = "https://www.openaire.eu/cerif-profile/1.2/"
     coll_map = {
         "works": "Publication",
         "patents": "Patent",

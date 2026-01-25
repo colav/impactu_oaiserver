@@ -170,7 +170,7 @@ def ListRecords_with_pagination(db, metadataPrefix: str = "cerif", resumptionTok
             record = etree.SubElement(listRecords, "record")
             _doc_header(record, coll_name, doc)
             metadata = etree.SubElement(record, "metadata")
-            cerif_el = doc_to_cerif_element(doc, collection=coll_name)
+            cerif_el = doc_to_cerif_element(doc, collection=coll_name, metadataPrefix=metadataPrefix)
             metadata.append(cerif_el)
             last_seen = (coll_name, doc.get("_id"))
         if len(docs) < remaining:
@@ -304,7 +304,7 @@ def get_record(identifier: str, metadataPrefix: Optional[str] = "cerif"):
     record = etree.SubElement(root, "record")
     _doc_header(record, collection, doc)
     metadata = etree.SubElement(record, "metadata")
-    metadata.append(doc_to_cerif_element(doc, collection=collection))
+    metadata.append(doc_to_cerif_element(doc, collection=collection, metadataPrefix=metadataPrefix))
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
