@@ -110,7 +110,7 @@ export default function Records() {
   }
 
   const columns = [
-    { title: 'Identifier', dataIndex: 'ident', key: 'ident', render: (t) => <code>{t}</code> },
+    { title: 'Identifier', dataIndex: 'ident', key: 'ident', render: (t) => <a href={`/records/${encodeURIComponent(t)}`}>{t}</a> },
     { title: 'Date', dataIndex: 'datestamp', key: 'datestamp' },
     { title: 'Entity', dataIndex: 'entity', key: 'entity', render: (t) => <Tag color="blue">{t || 'Unknown'}</Tag> },
     { title: 'Title', dataIndex: ['preview', 'title'], key: 'title', render: (t) => t ? <span style={{fontWeight:500}}>{t}</span> : null },
