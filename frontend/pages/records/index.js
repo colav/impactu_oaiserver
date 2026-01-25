@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { Card, Typography, List, Space, Tag, Button, Spin, Empty, Pagination, Divider, Row, Col, Menu, Badge, Tooltip } from 'antd'
-import { CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, TeamOutlined, FilterOutlined, ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons'
+import { 
+  Card, Typography, List, Space, Tag, Button, Spin, Empty, 
+  Divider, Row, Col, Menu, Badge, Tooltip, Select, DatePicker, 
+  Input, Skeleton 
+} from 'antd'
+import { 
+  CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, 
+  FilterOutlined, ArrowLeftOutlined, DownloadOutlined,
+  SearchOutlined, SettingOutlined
+} from '@ant-design/icons'
 import Link from 'next/link'
+import dayjs from 'dayjs'
 
 const { Title, Text } = Typography
+const { Option } = Select
+const { RangePicker } = DatePicker
 
 const OAI_COLLECTIONS = [
   { key: 'all', label: 'Todos los Registros', icon: <DatabaseOutlined /> },
@@ -18,17 +29,22 @@ const OAI_COLLECTIONS = [
   { key: 'subjects', label: 'Temas', countKey: 'subjects' },
 ]
 
+const METADATA_FORMATS = [
+  { value: 'oai_cerif_openaire_1.2', label: 'CERIF OpenAIRE 1.2' },
+  { value: 'oai_cerif_openaire_1.1.1', label: 'CERIF OpenAIRE 1.1.1' },
+]
+
 export default function Records() {
   const router = useRouter()
-  const { set = 'all' } = router.query
+  const { set = 'all', prefix = 'oai_cerif_openaire_1.2' } = router.query
   
   const [loading, setLoading] = useState(false)
   const [records, setRecords] = useState([])
   const [stats, setStats] = useState({})
+  const [localSearch, setLocalSearch] = useState('')
   
   // Pagination / OAI state
   const [resumptionToken, setResumptionToken] = useState(null)
-  const [historyTokens, setHistoryTokens] = useState([]) // To allow "back" navigation
   const [totalCount, setTotalCount] = useState(0)
   const [cursor, setCursor] = useState(0)
 
@@ -41,32 +57,28 @@ export default function Records() {
     let title = 'Sin título/nombre'
     let authors = []
     let type = 'Registro'
+    let description = ''
 
     if (metadata) {
-      // Try to find the root entity (Person, Publication, OrgUnit, Project, etc)
       const root = metadata.firstElementChild;
       if (root) {
         type = root.tagName;
-        
-        // 1. PERSON: Name = FamilyNames + FirstNames
         if (type === 'Person') {
           const family = root.getElementsByTagName('FamilyNames')[0]?.textContent || '';
           const first = root.getElementsByTagName('FirstNames')[0]?.textContent || '';
           title = `${family}${family && first ? ', ' : ''}${first}`.trim() || identifier;
         } 
-        // 2. ORGUNIT: Name
         else if (type === 'OrgUnit') {
           title = root.getElementsByTagName('Name')[0]?.textContent || identifier;
         }
-        // 3. PUBLICATION / OTHER: Title
         else {
           title = root.getElementsByTagName('Title')[0]?.textContent || 
                   root.getElementsByTagName('title')[0]?.textContent || 
                   root.getElementsByTagName('Name')[0]?.textContent ||
                   identifier;
+          description = root.getElementsByTagName('Abstract')[0]?.textContent || '';
         }
 
-        // Extract authors (works for Publications)
         const personNodes = Array.from(root.getElementsByTagName('Person') || [])
         authors = personNodes.map(p => {
           const f = p.getElementsByTagName('FamilyNames')[0]?.textContent || '';
@@ -76,15 +88,13 @@ export default function Records() {
       }
     }
 
-    return { id: identifier, title, authors, datestamp, type }
+    return { id: identifier, title, authors, datestamp, type, description }
   }
 
   const fetchStats = async () => {
     try {
       const res = await fetch('/stats')
-      if (!res.ok) return;
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
+      if (res.ok) {
         const data = await res.json()
         setStats(data)
       }
@@ -123,29 +133,42 @@ export default function Records() {
 
   useEffect(() => {
     if (router.isReady) {
-      // RESET pagination when collection changes
-      setHistoryTokens([])
-      let url = `/oai?verb=ListRecords&metadataPrefix=oai_cerif_openaire_1.2`
+      let url = `/oai?verb=ListRecords&metadataPrefix=${prefix}`
       if (set && set !== 'all') url += `&set=${set}`
       fetchRecords(url)
     }
-  }, [router.isReady, set])
+  }, [router.isReady, set, prefix])
 
-  const goNext = () => {
-    if (!resumptionToken) return
-    setHistoryTokens([...historyTokens, resumptionToken]) // This is simplistic but OAI is sequential
-    fetchRecords(`/oai?verb=ListRecords&resumptionToken=${encodeURIComponent(resumptionToken)}`)
+  const onParamChange = (key, value) => {
+    router.push({ 
+      pathname: '/records', 
+      query: { ...router.query, [key]: value } 
+    }, undefined, { shallow: true })
   }
 
-  const onSetChange = (newSet) => {
-    router.push({ pathname: '/records', query: { set: newSet } }, undefined, { shallow: true })
-  }
+  const filteredRecords = records.filter(r => 
+    r.title.toLowerCase().includes(localSearch.toLowerCase()) || 
+    r.id.toLowerCase().includes(localSearch.toLowerCase())
+  )
 
   return (
     <Row gutter={40}>
       <Col xs={24} lg={6}>
         <div style={{ position: 'sticky', top: 120 }}>
-          <Title level={4} style={{ marginBottom: 24 }}><FilterOutlined /> Colecciones</Title>
+          <Card size="small" style={{ marginBottom: 24, borderRadius: 8 }}>
+            <Title level={5}><SettingOutlined /> Configuración OAI</Title>
+            <Divider style={{ margin: '12px 0' }} />
+            <Text type="secondary" style={{ fontSize: 12 }}>Metadata Prefix:</Text>
+            <Select 
+              value={prefix} 
+              style={{ width: '100%', marginTop: 8 }} 
+              onChange={(v) => onParamChange('prefix', v)}
+            >
+              {METADATA_FORMATS.map(f => <Option key={f.value} value={f.value}>{f.label}</Option>)}
+            </Select>
+          </Card>
+
+          <Title level={5} style={{ marginBottom: 16 }}><FilterOutlined /> Colecciones</Title>
           <Menu
             mode="vertical"
             selectedKeys={[set]}
@@ -160,42 +183,58 @@ export default function Records() {
                   )}
                 </div>
               ),
-              onClick: () => onSetChange(item.key)
+              onClick: () => onParamChange('set', item.key)
             }))}
           />
         </div>
       </Col>
 
       <Col xs={24} lg={18}>
-        <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          <div>
-            <Title level={3} style={{ margin: 0 }}>
-              {OAI_COLLECTIONS.find(c => c.key === set)?.label || 'Explorador'}
-            </Title>
-            <Text type="secondary">
-              {(totalCount > 0) ? `Mostrando desde el registro ${cursor + 1} de ${totalCount}` : 'Cargando registros...'}
-            </Text>
-          </div>
-          <Space>
-             <Tooltip title="Obtener link de cosecha OAI-PMH para esta colección">
-               <Button 
-                icon={<DownloadOutlined />} 
-                href={`/oai?verb=ListRecords&metadataPrefix=oai_cerif_openaire_1.2${set !== 'all' ? `&set=${set}` : ''}`}
-                target="_blank"
-               >
-                 Cosechar XML
-               </Button>
-             </Tooltip>
-             {stats.total && <Tag color="blue">{stats.total} total global</Tag>}
-          </Space>
+        <div style={{ marginBottom: 32 }}>
+          <Row justify="space-between" align="bottom">
+            <Col>
+              <Title level={3} style={{ margin: 0 }}>
+                {OAI_COLLECTIONS.find(c => c.key === set)?.label || 'Explorador'}
+              </Title>
+              <Text type="secondary">
+                {(totalCount > 0) ? `Mostrando desde el registro ${cursor + 1} de ${totalCount}` : 'Explorando metadatos...'}
+              </Text>
+            </Col>
+            <Col>
+              <Space>
+                <Input 
+                   placeholder="Filtrar en esta página..." 
+                   prefix={<SearchOutlined />} 
+                   value={localSearch}
+                   onChange={e => setLocalSearch(e.target.value)}
+                   style={{ width: 250 }}
+                />
+                <Tooltip title="Obtener link de cosecha OAI-PMH">
+                  <Button 
+                    icon={<DownloadOutlined />} 
+                    href={`/oai?verb=ListRecords&metadataPrefix=${prefix}${\"&set=\" + set}`}
+                    target="_blank"
+                  />
+                </Tooltip>
+              </Space>
+            </Col>
+          </Row>
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '100px' }}><Spin size="large" /></div>
-        ) : records.length > 0 ? (
+          <List
+            grid={{ gutter: 16, column: 1 }}
+            dataSource={[1, 2, 3, 4]}
+            renderItem={() => (
+              <Card style={{ marginBottom: 16 }}>
+                <Skeleton active avatar={{ size: 'large' }} paragraph={{ rows: 2 }} />
+              </Card>
+            )}
+          />
+        ) : filteredRecords.length > 0 ? (
           <>
             <List
-              dataSource={records}
+              dataSource={filteredRecords}
               renderItem={item => (
                 <Card className="record-card" hoverable style={{ marginBottom: 16 }} bodyStyle={{ padding: '20px' }}>
                   <Row gutter={20} align="top">
@@ -206,12 +245,17 @@ export default function Records() {
                       <Space wrap split={<Divider type="vertical" />} style={{ marginBottom: 12 }}>
                         {item.authors.length > 0 ? item.authors.slice(0, 3).map((a, i) => (
                           <span key={i} style={{ color: '#328181', fontSize: 13, fontWeight: 500 }}>{a}</span>
-                        )) : <Text type="secondary" italic>Anónimo</Text>}
+                        )) : <Text type="secondary" italic>Información no disponible</Text>}
                       </Space>
+                      {item.description && (
+                        <Paragraph ellipsis={{ rows: 2 }} style={{ color: '#666', fontSize: 13 }}>
+                          {item.description}
+                        </Paragraph>
+                      )}
                       <Space size="middle">
                         <Tag color="cyan">{item.type}</Tag>
                         <Text type="secondary" style={{ fontSize: 12 }}><CalendarOutlined /> {item.datestamp}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>ID: {item.id}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{item.id}</Text>
                       </Space>
                     </Col>
                     <Col><Link href={`/records/${encodeURIComponent(item.id)}`}><Button type="text" icon={<ArrowRightOutlined />} /></Link></Col>
@@ -221,27 +265,27 @@ export default function Records() {
             />
             
             <div style={{ textAlign: 'center', marginTop: 40, paddingBottom: 40 }}>
-               <Space size="large">
-                  <Button 
-                    disabled={cursor === 0} 
-                    icon={<ArrowLeftOutlined />}
-                    onClick={() => router.reload()} // OAI reverse pagination is hard, usually simpler to reload or track tokens better
-                  >
-                    Primera Página
-                  </Button>
-                  <Button 
-                    type="primary" 
-                    icon={<ArrowRightOutlined />} 
-                    disabled={!resumptionToken}
-                    onClick={goNext}
-                    style={{ background: '#328181', borderColor: '#328181' }}
-                  >
-                    Siguiente Página
-                  </Button>
-               </Space>
+              <Space size="large">
+                <Button 
+                  disabled={cursor === 0} 
+                  icon={<ArrowLeftOutlined />}
+                  onClick={() => onParamChange('set', set)} // Reset
+                >
+                  Inicio
+                </Button>
+                <Button 
+                  type="primary" 
+                  icon={<ArrowRightOutlined />} 
+                  disabled={!resumptionToken}
+                  onClick={() => fetchRecords(`/oai?verb=ListRecords&resumptionToken=${encodeURIComponent(resumptionToken)}`)}
+                  style={{ background: '#328181', borderColor: '#328181' }}
+                >
+                  Siguiente Página
+                </Button>
+              </Space>
             </div>
           </>
-        ) : <Empty style={{ marginTop: 100 }} />}
+        ) : <Empty description="No se encontraron registros en esta página" style={{ marginTop: 100 }} />}
       </Col>
     </Row>
   )
