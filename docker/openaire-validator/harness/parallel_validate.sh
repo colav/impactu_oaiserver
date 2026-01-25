@@ -66,9 +66,9 @@ for set in $(echo "$sets"); do
   run_jobs=$((run_jobs+1))
   i=$((i+1))
   if [ "$run_jobs" -ge "$CONCURRENCY" ]; then
-    # wait for any job to finish
-    wait -n || true
-    run_jobs=$((run_jobs-1))
+    # wait for the current batch to finish
+    wait || true
+    run_jobs=0
   fi
 done
 
