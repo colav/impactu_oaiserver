@@ -1,6 +1,81 @@
 #!/usr/bin/env sh
 set -eu
 
+# Sequential validator harness (safe for local debugging).
+# Usage: parallel_validate.sh ENDPOINT
+
+ENDPOINT="${1:-http://localhost:8000/oai}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROXY_SCRIPT="$ROOT/harness/proxy_single_set.py"
+
+tmpfile="/tmp/openaire_sets_$$.xml"
+echo "Fetching sets from: $ENDPOINT"
+if ! curl -sSf "$ENDPOINT?verb=ListSets" > "$tmpfile"; then
+  echo "Warning: ListSets failed or returned non-2xx; falling back to single run" >&2
+fi
+
+if [ ! -s "$tmpfile" ]; then
+  echo "ListSets returned empty — running single validator against $ENDPOINT"
+  VALIDATOR_ENDPOINT="$ENDPOINT" docker compose run --rm openaire-validator || true
+  rm -f "$tmpfile"
+  exit 0
+fi
+
+sets=$(python3 - <<PY
+import sys,xml.etree.ElementTree as ET
+xml=open('$tmpfile','rb').read()
+root=ET.fromstring(xml)
+ns={'oai':'http://www.openarchives.org/OAI/2.0/'}
+specs=[]
+for s in root.findall('.//{http://www.openarchives.org/OAI/2.0/}set'):
+    sp = s.find('{http://www.openarchives.org/OAI/2.0/}setSpec')
+    if sp is not None and sp.text:
+        specs.append(sp.text.strip())
+print('\n'.join(specs))
+PY
+)
+
+if [ -z "$sets" ]; then
+  echo "No sets found after parsing; aborting" >&2
+  rm -f "$tmpfile"
+  exit 2
+fi
+
+echo "Found $(echo "$sets" | wc -l) sets; running sequentially"
+
+port_base=18000
+i=0
+overall_rc=0
+
+for set in $(echo "$sets"); do
+  port=$((port_base + i))
+  mkdir -p "$ROOT/data/logs"
+  echo "--- Starting proxy for set=$set on port $port ---"
+  python3 "$PROXY_SCRIPT" --target "$ENDPOINT" --set "$set" --port "$port" > "$ROOT/data/logs/proxy-$set.log" 2>&1 &
+  proxy_pid=$!
+  echo "proxy pid=$proxy_pid"
+
+  echo "Running validator for set=$set against http://127.0.0.1:$port/oai"
+  VALIDATOR_ENDPOINT="http://127.0.0.1:$port/oai" docker compose run --rm openaire-validator || rc=$?
+  rc=${rc:-0}
+  echo "Validator exit=$rc"
+  if [ "$rc" -ne 0 ]; then overall_rc=1; fi
+
+  latest_log=$(ls -t "$ROOT/data/logs" | head -n1 || true)
+  echo "Latest validator log: $ROOT/data/logs/$latest_log"
+
+  echo "Stopping proxy pid=$proxy_pid"
+  kill "$proxy_pid" >/dev/null 2>&1 || true
+  sleep 1
+  i=$((i+1))
+done
+
+rm -f "$tmpfile"
+echo "All validator runs completed. overall_rc=$overall_rc"
+exit "$overall_rc"
+#!/usr/bin/env sh
+set -eu
+
 # Parallel validator harness.
 # Usage: parallel_validate.sh ENDPOINT [CONCURRENCY]
 
