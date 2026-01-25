@@ -1,8 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // export as a static site for simple serving from the backend
-  output: 'export',
+  // (do not set `output: 'export'` here so rewrites work during development)
   // during development, proxy OAI calls to the backend at localhost:8000
   async rewrites() {
     return [
