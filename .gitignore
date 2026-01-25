@@ -29,3 +29,15 @@ dist/
 
 # OS files
 .DS_Store
+
+# OpenAIRE validator logs (local mount)
+docker/openaire-validator/data/logs/
+
+# Local runtime logs and temp
+logs/
+tmp/
+*.log
+
+# dotenv env files
+.env
+.env.*
