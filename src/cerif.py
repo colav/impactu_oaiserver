@@ -204,193 +204,171 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity") -> etree._Elemen
     """
     db = get_db()
 
-    wrapper = etree.Element("cfEntities", nsmap={None: NS})
-
-    ent = etree.SubElement(wrapper, "cfEntity")
-
-    _text(ent, "cfEntityId", doc.get("_id") or doc.get("id"))
-    _text(ent, "cfEntityType", collection)
-    # normalized subtype (article, book, book-chapter, thesis, patent, other)
-    subtype = _normalize_result_subtype(doc)
-    if subtype and subtype != "other":
-        _text(ent, "cfEntitySubtype", subtype)
-
-    # Titles / names
-    titles = doc.get("titles") or doc.get("names") or []
-    if isinstance(titles, dict):
-        titles = [titles]
-    for t in titles:
-        if isinstance(t, dict):
-            te = etree.SubElement(ent, "cfTitle")
-            _text(te, "title", t.get("title") or t.get("name"))
-            if t.get("lang"):
-                _text(te, "lang", t.get("lang"))
-            if t.get("source"):
-                _text(te, "source", t.get("source"))
-        else:
-            te = etree.SubElement(ent, "cfTitle")
-            te.text = str(t)
-
-    # Abstracts / descriptions
-    abstracts = doc.get("abstracts") or doc.get("descriptions") or doc.get("abstract")
-    if isinstance(abstracts, list):
-        for a in abstracts:
-            if isinstance(a, dict):
-                raw = a.get("abstract") or a.get("description")
-                text = None
-                if isinstance(raw, dict):
-                    try:
-                        positions = []
-                        for token, poslist in raw.items():
-                            if isinstance(poslist, (list, tuple)):
-                                for p in poslist:
-                                    try:
-                                        positions.append((int(p), str(token)))
-                                    except Exception:
-                                        continue
-                            else:
-                                try:
-                                    positions.append((int(poslist), str(token)))
-                                except Exception:
-                                    continue
-                        positions.sort(key=lambda x: x[0])
-                        text = " ".join([t for _, t in positions])
-                    except Exception:
-                        text = None
-                if text is None:
-                    text = raw if isinstance(raw, str) else (a.get("description") or str(raw))
-                ae = etree.SubElement(ent, "cfAbstract")
-                ae.text = text
-                if a.get("lang"):
-                    _text(ae, "lang", a.get("lang"))
-            else:
-                ae = etree.SubElement(ent, "cfAbstract")
-                ae.text = str(a)
-    elif abstracts:
-        ae = etree.SubElement(ent, "cfAbstract")
-        if isinstance(abstracts, dict):
-            ae.text = abstracts.get("abstract") or str(abstracts)
-        else:
-            ae.text = str(abstracts)
-
-    # External identifiers
-    ext_ids = doc.get("external_ids") or doc.get("identifiers") or []
-    if isinstance(ext_ids, dict):
-        ext_ids = [ext_ids]
-    for xid in ext_ids:
-        _emit_identifier(ent, xid)
-
-    # Dates
-    updated = doc.get("updated") or doc.get("dates") or []
-    if isinstance(updated, dict):
-        updated = [updated]
-    for u in updated:
-        _emit_date(ent, u)
-
-    # bibliographic_info -> structured fields
-    bib = doc.get("bibliographic_info") or {}
-    if bib:
-        bib_el = etree.SubElement(ent, "cfBibliographic")
-        if bib.get("publisher"):
-            _text(bib_el, "publisher", bib.get("publisher"))
-        if bib.get("volume"):
-            _text(bib_el, "volume", bib.get("volume"))
-        if bib.get("issue"):
-            _text(bib_el, "issue", bib.get("issue"))
-        if bib.get("start_page") or bib.get("end_page") or bib.get("pages"):
-            _text(bib_el, "pages", bib.get("pages") or (str(bib.get("start_page")) + "-" + str(bib.get("end_page")) if bib.get("start_page") and bib.get("end_page") else None))
-        if bib.get("isbn"):
-            _text(bib_el, "isbn", bib.get("isbn"))
-        if bib.get("issn"):
-            _text(bib_el, "issn", bib.get("issn"))
-        if bib.get("chapter") or bib.get("chapterNumber"):
-            _text(bib_el, "chapterNumber", bib.get("chapter") or bib.get("chapterNumber"))
-
-    # Authors / persons -> try to resolve person entities and emit relations
-    authors = doc.get("authors") or doc.get("creators") or []
-    if isinstance(authors, dict):
-        authors = [authors]
-    if authors:
-        contribs = etree.SubElement(ent, "cfContributors")
-        order = 1
-        for a in authors:
-            c = etree.SubElement(contribs, "cfContributor")
-            if isinstance(a, dict):
-                _text(c, "name", a.get("full_name") or a.get("name"))
-                if a.get("id"):
-                    _text(c, "id", a.get("id"))
-                # affiliations nested
-                if a.get("affiliations"):
-                    affs = etree.SubElement(c, "cfAffiliations")
-                    for af in a.get("affiliations"):
-                        af_el = etree.SubElement(affs, "cfAffiliation")
-                        if isinstance(af, dict):
-                            _text(af_el, "id", af.get("id"))
-                            _text(af_el, "name", af.get("name"))
-                        else:
-                            af_el.text = str(af)
-                # attempt to resolve person entity in DB and append it to wrapper
-                if a.get("id"):
-                    person_ent = _emit_person_entity(db, a.get("id"))
-                    if person_ent is not None:
-                        wrapper.append(person_ent)
-                        # add a simple relation element in main entity
-                        rel = etree.SubElement(ent, "cfRelation")
-                        _text(rel, "from", f"person:{a.get('id')}")
-                        _text(rel, "to", f"{collection}:{doc.get('_id')}")
-                        _text(rel, "role", a.get("role") or "Author")
-                        _text(rel, "order", order)
-                        # also emit affiliations as OrganizationUnit entities and relations
-                        if a.get("affiliations"):
-                            for af in a.get("affiliations"):
-                                org_ent = _emit_org_entity(db, af)
-                                if org_ent is not None:
-                                    wrapper.append(org_ent)
-                                    # relation person -> org
-                                    rel_po = etree.SubElement(ent, "cfRelation")
-                                    _text(rel_po, "from", f"person:{a.get('id')}")
-                                    _text(rel_po, "to", f"org:{org_ent.findtext('cfEntityId')}")
-                                    _text(rel_po, "role", "affiliatedTo")
-                                    # relation work -> org
-                                    rel_wo = etree.SubElement(ent, "cfRelation")
-                                    _text(rel_wo, "from", f"org:{org_ent.findtext('cfEntityId')}")
-                                    _text(rel_wo, "to", f"{collection}:{doc.get('_id')}")
-                                    _text(rel_wo, "role", "hostOrganization")
-            else:
-                c.text = str(a)
-            order += 1
-
-    # Subjects / keywords -> cfClass
-    subjects = doc.get("subjects") or doc.get("keywords") or []
-    if subjects:
-        for s in subjects:
-            # subjects may be container with source->subjects
-            if isinstance(s, dict) and s.get("subjects"):
-                for ss in s.get("subjects"):
-                    _emit_cfClass(ent, ss)
-            else:
-                _emit_cfClass(ent, s)
-
-    # External URLs
-    urls = doc.get("external_urls") or doc.get("links") or []
-    if isinstance(urls, dict):
-        urls = [urls]
-    if urls:
-        links = etree.SubElement(ent, "cfExternalURLs")
-        for u in urls:
-            uel = etree.SubElement(links, "cfURL")
-            if isinstance(u, dict):
-                _text(uel, "source", u.get("source"))
-                _text(uel, "url", u.get("url") or u.get("link"))
-            else:
-                uel.text = str(u)
-
-    # Add a raw JSON snapshot for completeness
+    # Build a minimal OpenAIRE CERIF payload element for the requested collection.
+    openaire_ns = "https://www.openaire.eu/cerif-profile/1.2/"
+    coll_map = {
+        "works": "Publication",
+        "patents": "Patent",
+        "events": "Event",
+        "projects": "Project",
+        "person": "Person",
+        "affiliations": "OrgUnit",
+        "sources": "Product",
+        "subjects": "Product",
+        "equipments": "Equipment",
+        "funding": "Funding",
+    }
+    local_name = coll_map.get(collection, "Publication")
+    top = etree.Element("{" + openaire_ns + "}" + local_name, nsmap={None: openaire_ns})
     try:
-        import json
-        raw = etree.SubElement(ent, "cfRawJson")
-        raw.text = json.dumps(doc, default=str, ensure_ascii=False)
+        top.set("id", str(doc.get("_id")))
     except Exception:
         pass
 
-    return wrapper
+    # Add a minimal COAR Type element in the appropriate vocab namespace for
+    # entity types that require it (validator expects a Type element first).
+    vocab_map = {
+        "Publication": "COAR_Publication_Types",
+        "Product": "COAR_Product_Types",
+        "Patent": "COAR_Patent_Types",
+        "Project": "COAR_Project_Types",
+        "Equipment": "COAR_Equipment_Types",
+        "Funding": "COAR_Funding_Types",
+    }
+    if local_name in vocab_map:
+        vocab_ns = "https://www.openaire.eu/cerif-profile/vocab/" + vocab_map[local_name]
+        try:
+            typ = etree.SubElement(top, "{" + vocab_ns + "}Type")
+            typ.text = "Other"
+        except Exception:
+            pass
+
+    # Helper constructors
+    def _add_title(parent, title_val):
+        if not title_val:
+            return
+        el = etree.SubElement(parent, "Title")
+        el.text = str(title_val)
+        el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+        return el
+
+    def _add_abstract(parent, text):
+        if not text:
+            return
+        el = etree.SubElement(parent, "Abstract")
+        el.text = str(text)
+        el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+        return el
+
+    def _add_identifier(parent, xid):
+        if not xid:
+            return
+        ident = etree.SubElement(parent, "Identifier")
+        if isinstance(xid, dict):
+            vid = xid.get("id") or xid.get("value") or xid.get("_id")
+            if vid is not None:
+                v = etree.SubElement(ident, "id")
+                v.text = str(vid)
+            src = xid.get("source") or xid.get("provenance")
+            # set identifier type attribute (required by some schemas)
+            if src:
+                try:
+                    ident.set("type", str(src))
+                except Exception:
+                    pass
+                s = etree.SubElement(ident, "Source")
+                s.text = str(src)
+            else:
+                # try to infer scheme from value
+                scheme = _detect_scheme(vid) if vid else None
+                if scheme:
+                    ident.set("type", scheme)
+        else:
+            v = etree.SubElement(ident, "id")
+            v.text = str(xid)
+            # default type for plain identifiers
+            try:
+                ident.set("type", _detect_scheme(str(xid)) or "other")
+            except Exception:
+                pass
+        return ident
+
+    # Minimal mapping per collection
+    if local_name == "Publication":
+        # Titles
+        titles = doc.get("titles") or doc.get("names") or []
+        if isinstance(titles, dict):
+            titles = [titles]
+        if titles:
+            for t in titles:
+                if isinstance(t, dict):
+                    _add_title(top, t.get("title") or t.get("name"))
+                else:
+                    _add_title(top, t)
+        else:
+            # fallback to cfEntity title if present
+            t = doc.get("title") or doc.get("name")
+            _add_title(top, t)
+        # Abstract
+        abs_ = doc.get("abstracts") or doc.get("descriptions") or doc.get("abstract")
+        if isinstance(abs_, list):
+            _add_abstract(top, abs_[0] if abs_ else None)
+        else:
+            _add_abstract(top, abs_)
+        # Identifiers
+        for xid in doc.get("external_ids") or doc.get("identifiers") or []:
+            _add_identifier(top, xid)
+        # PublicationDate
+        pubdate = None
+        if doc.get("publication_date"):
+            pubdate = doc.get("publication_date")
+        elif doc.get("year"):
+            pubdate = doc.get("year")
+        elif doc.get("updated"):
+            if isinstance(doc.get("updated"), list) and doc.get("updated"):
+                pubdate = doc.get("updated")[-1].get("time")
+        if pubdate:
+            pd = etree.SubElement(top, "PublicationDate")
+            pd.text = str(pubdate)
+
+    elif local_name == "Person":
+        # PersonName
+        pn = etree.SubElement(top, "PersonName")
+        family = doc.get("last_names") or doc.get("last_name") or []
+        first = doc.get("first_names") or doc.get("first_name") or []
+        if isinstance(family, list):
+            fn = etree.SubElement(pn, "FamilyNames")
+            fn.text = " ".join([str(x) for x in family if x])
+        else:
+            fn = etree.SubElement(pn, "FamilyNames")
+            fn.text = str(family)
+        if isinstance(first, list):
+            ff = etree.SubElement(pn, "FirstNames")
+            ff.text = " ".join([str(x) for x in first if x])
+        else:
+            ff = etree.SubElement(pn, "FirstNames")
+            ff.text = str(first)
+        # Identifiers
+        for xid in doc.get("external_ids") or doc.get("identifiers") or []:
+            _add_identifier(top, xid)
+
+    elif local_name == "OrgUnit":
+        # Name
+        names = doc.get("names") or doc.get("name")
+        if isinstance(names, list):
+            n = etree.SubElement(top, "Name")
+            first = names[0]
+            if isinstance(first, dict):
+                val = first.get("name") or first.get("title") or str(first)
+            else:
+                val = first
+            n.text = str(val)
+            n.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+        elif names:
+            n = etree.SubElement(top, "Name")
+            n.text = str(names)
+            n.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+        for xid in doc.get("external_ids") or doc.get("identifiers") or []:
+            _add_identifier(top, xid)
+
+    return top

@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  openaire-validator:
+    build: .
+    image: openaire-cris-validator:latest
+    environment:
+      - ENDPOINT=${VALIDATOR_ENDPOINT}
+      - LOOP_INTERVAL=${VALIDATOR_LOOP_INTERVAL:-0}
+    volumes:
+      - ./data/logs:/opt/openaire/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    network_mode: "host"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q 'Running validation' /opt/openaire/logs/* || exit 0"]
+      interval: 1m
+      timeout: 20s
+      retries: 3
