@@ -32,7 +32,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
             base = self.target.rstrip('/')
         target_url = base + self.path
         try:
-            req = urllib.request.Request(target_url)
+            # preserve the incoming Host (proxy host) so backend constructs request URLs matching the proxy
+            incoming_host = self.headers.get('Host') or f'127.0.0.1:{self.server.server_port}'
+            headers = {'Host': incoming_host}
+            req = urllib.request.Request(target_url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read()
                 self.send_response(resp.getcode())
@@ -53,7 +56,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
             base = self.target.rstrip('/')
         target_url = base + self.path
         try:
-            req = urllib.request.Request(target_url)
+            incoming_host = self.headers.get('Host') or f'127.0.0.1:{self.server.server_port}'
+            headers = {'Host': incoming_host}
+            req = urllib.request.Request(target_url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read()
                 # parse and extract the set matching setspec

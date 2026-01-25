@@ -49,11 +49,11 @@ overall_rc=0
 
 for set in $(echo "$sets"); do
   port=$((port_base + i))
-  mkdir -p "$ROOT/data/logs"
+  tmp_proxy_log="/tmp/openaire_proxy_$set.log"
   echo "--- Starting proxy for set=$set on port $port ---"
-  python3 "$PROXY_SCRIPT" --target "$ENDPOINT" --set "$set" --port "$port" > "$ROOT/data/logs/proxy-$set.log" 2>&1 &
+  python3 "$PROXY_SCRIPT" --target "$ENDPOINT" --set "$set" --port "$port" > "$tmp_proxy_log" 2>&1 &
   proxy_pid=$!
-  echo "proxy pid=$proxy_pid"
+  echo "proxy pid=$proxy_pid (log=$tmp_proxy_log)"
 
   echo "Running validator for set=$set against http://127.0.0.1:$port/oai"
   VALIDATOR_ENDPOINT="http://127.0.0.1:$port/oai" docker compose run --rm openaire-validator || rc=$?
