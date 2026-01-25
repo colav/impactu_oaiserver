@@ -3,12 +3,12 @@ import { useRouter } from 'next/router'
 import { 
   Card, Typography, List, Space, Tag, Button, Spin, Empty, 
   Divider, Row, Col, Menu, Badge, Tooltip, Select, DatePicker, 
-  Input, Skeleton 
+  Input, Skeleton, Progress
 } from 'antd'
 import { 
   CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, 
   FilterOutlined, ArrowLeftOutlined, DownloadOutlined,
-  SearchOutlined, SettingOutlined
+  SearchOutlined, SettingOutlined, CodeOutlined
 } from '@ant-design/icons'
 import Link from 'next/link'
 import dayjs from 'dayjs'
@@ -133,11 +133,15 @@ export default function Records() {
 
   useEffect(() => {
     if (router.isReady) {
-      let url = `/oai?verb=ListRecords&metadataPrefix=${prefix}`
+      const { set, prefix, from, until } = router.query
+      const pref = prefix || 'oai_cerif_openaire_1.2'
+      let url = `/oai?verb=ListRecords&metadataPrefix=${pref}`
       if (set && set !== 'all') url += `&set=${set}`
+      if (from) url += `&from=${from}`
+      if (until) url += `&until=${until}`
       fetchRecords(url)
     }
-  }, [router.isReady, set, prefix])
+  }, [router.isReady, router.query.set, router.query.prefix, router.query.from, router.query.until])
 
   const onParamChange = (key, value) => {
     router.push({ 
@@ -158,14 +162,33 @@ export default function Records() {
           <Card size="small" style={{ marginBottom: 24, borderRadius: 8 }}>
             <Title level={5}><SettingOutlined /> Configuración OAI</Title>
             <Divider style={{ margin: '12px 0' }} />
-            <Text type="secondary" style={{ fontSize: 12 }}>Metadata Prefix:</Text>
-            <Select 
-              value={prefix} 
-              style={{ width: '100%', marginTop: 8 }} 
-              onChange={(v) => onParamChange('prefix', v)}
-            >
-              {METADATA_FORMATS.map(f => <Option key={f.value} value={f.value}>{f.label}</Option>)}
-            </Select>
+            
+            <Space direction="vertical" style={{ width: '100%' }} size="small">
+              <Text type="secondary" style={{ fontSize: 12 }}>Metadata Prefix:</Text>
+              <Select 
+                value={prefix} 
+                style={{ width: '100%' }} 
+                onChange={(v) => onParamChange('prefix', v)}
+              >
+                {METADATA_FORMATS.map(f => <Option key={f.value} value={f.value}>{f.label}</Option>)}
+              </Select>
+
+              <Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>Rango de fechas (Cosecha):</Text>
+              <RangePicker 
+                style={{ width: '100%' }} 
+                onChange={(dates) => {
+                  if (dates) {
+                    onParamChange('from', dates[0].format('YYYY-MM-DD'))
+                    onParamChange('until', dates[1].format('YYYY-MM-DD'))
+                  } else {
+                    const newQuery = { ...router.query }
+                    delete newQuery.from
+                    delete newQuery.until
+                    router.push({ pathname: '/records', query: newQuery }, undefined, { shallow: true })
+                  }
+                }}
+              />
+            </Space>
           </Card>
 
           <Title level={5} style={{ marginBottom: 16 }}><FilterOutlined /> Colecciones</Title>
@@ -197,8 +220,17 @@ export default function Records() {
                 {OAI_COLLECTIONS.find(c => c.key === set)?.label || 'Explorador'}
               </Title>
               <Text type="secondary">
-                {(totalCount > 0) ? `Mostrando desde el registro ${cursor + 1} de ${totalCount}` : 'Explorando metadatos...'}
+                {(totalCount > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length} de ${totalCount}` : 'Explorando metadatos...'}
               </Text>
+              {totalCount > 0 && (
+                <Progress 
+                  percent={Math.round((cursor + filteredRecords.length) / totalCount * 100)} 
+                  size="small" 
+                  status="active" 
+                  strokeColor="#328181"
+                  style={{ width: 200, display: 'block', marginTop: 4 }}
+                />
+              )}
             </Col>
             <Col>
               <Space>
@@ -212,7 +244,7 @@ export default function Records() {
                 <Tooltip title="Obtener link de cosecha OAI-PMH">
                   <Button 
                     icon={<DownloadOutlined />} 
-                    href={`/oai?verb=ListRecords&metadataPrefix=${prefix}${\"&set=\" + set}`}
+                    href={`/oai?verb=ListRecords&metadataPrefix=${prefix}${set !== 'all' ? `&set=${set}` : ''}`}
                     target="_blank"
                   />
                 </Tooltip>
@@ -256,6 +288,17 @@ export default function Records() {
                         <Tag color="cyan">{item.type}</Tag>
                         <Text type="secondary" style={{ fontSize: 12 }}><CalendarOutlined /> {item.datestamp}</Text>
                         <Text type="secondary" style={{ fontSize: 12 }}>{item.id}</Text>
+                        <Tooltip title="Copiar ID">
+                           <Button 
+                             size="small" 
+                             type="text" 
+                             icon={<CodeOutlined style={{ fontSize: 12 }} />} 
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               navigator.clipboard.writeText(item.id);
+                             }} 
+                           />
+                        </Tooltip>
                       </Space>
                     </Col>
                     <Col><Link href={`/records/${encodeURIComponent(item.id)}`}><Button type="text" icon={<ArrowRightOutlined />} /></Link></Col>
