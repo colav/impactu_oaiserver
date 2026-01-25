@@ -8,12 +8,14 @@ import {
 import { 
   CalendarOutlined, ArrowRightOutlined, DatabaseOutlined, 
   FilterOutlined, ArrowLeftOutlined, DownloadOutlined,
-  SearchOutlined, SettingOutlined, CodeOutlined
+  SearchOutlined, SettingOutlined, CodeOutlined,
+  DeleteOutlined, SortAscendingOutlined, FileTextOutlined,
+  FileZipOutlined
 } from '@ant-design/icons'
 import Link from 'next/link'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Title, Text, Paragraph } = Typography
 const { Option } = Select
 const { RangePicker } = DatePicker
 
@@ -30,18 +32,19 @@ const OAI_COLLECTIONS = [
 ]
 
 const METADATA_FORMATS = [
-  { value: 'oai_cerif_openaire_1.2', label: 'CERIF OpenAIRE 1.2' },
-  { value: 'oai_cerif_openaire_1.1.1', label: 'CERIF OpenAIRE 1.1.1' },
+  { value: 'oai_cerif_openaire_1.2', label: 'CERIF OpenAIRE 1.2', description: 'Formato estándar OpenAIRE CRIS 1.2' },
+  { value: 'oai_cerif_openaire_1.1.1', label: 'CERIF OpenAIRE 1.1.1', description: 'Versión compatible 1.1.1' },
 ]
 
 export default function Records() {
   const router = useRouter()
-  const { set = 'all', prefix = 'oai_cerif_openaire_1.2' } = router.query
+  const { set = 'all', prefix = 'oai_cerif_openaire_1.2', from, until } = router.query
   
   const [loading, setLoading] = useState(false)
   const [records, setRecords] = useState([])
   const [stats, setStats] = useState({})
   const [localSearch, setLocalSearch] = useState('')
+  const [sortOrder, setSortOrder] = useState('newest') // newest, oldest, title
   
   // Pagination / OAI state
   const [resumptionToken, setResumptionToken] = useState(null)
@@ -150,7 +153,52 @@ export default function Records() {
     }, undefined, { shallow: true })
   }
 
-  const filteredRecords = records.filter(r => 
+  const resetFilters = () => {
+    router.push('/records')
+    setLocalSearch('')
+  }
+
+  const exportData = (format) => {
+    const data = filteredRecords.map(r => ({
+      id: r.id,
+      title: r.title,
+      type: r.type,
+      datestamp: r.datestamp,
+      authors: r.authors.join('; ')
+    }))
+
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `records_${set}.json`
+      a.click()
+    } else if (format === 'csv') {
+      const headers = ['ID', 'Title', 'Type', 'Datestamp', 'Authors']
+      const csv = [
+        headers.join(','),
+        ...data.map(r => [
+          `"${r.id}"`, `"${r.title.replace(/"/g, '""')}"`, `"${r.type}"`, `"${r.datestamp}"`, `"${r.authors.replace(/"/g, '""')}"`
+        ].join(','))
+      ].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `records_${set}.csv`
+      a.click()
+    }
+  }
+
+  const sortedRecords = [...records].sort((a, b) => {
+    if (sortOrder === 'newest') return new Date(b.datestamp) - new Date(a.datestamp)
+    if (sortOrder === 'oldest') return new Date(a.datestamp) - new Date(b.datestamp)
+    if (sortOrder === 'title') return a.title.localeCompare(b.title)
+    return 0
+  })
+
+  const filteredRecords = sortedRecords.filter(r => 
     r.title.toLowerCase().includes(localSearch.toLowerCase()) || 
     r.id.toLowerCase().includes(localSearch.toLowerCase())
   )
@@ -159,12 +207,15 @@ export default function Records() {
     <Row gutter={40}>
       <Col xs={24} lg={6}>
         <div style={{ position: 'sticky', top: 120 }}>
-          <Card size="small" style={{ marginBottom: 24, borderRadius: 8 }}>
-            <Title level={5}><SettingOutlined /> Configuración OAI</Title>
+          <Card size="small" style={{ marginBottom: 24, borderRadius: 12, border: '1px solid #e1e9e9' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Title level={5} style={{ margin: 0 }}><SettingOutlined /> OAI Params</Title>
+              <Button size="small" type="text" danger icon={<DeleteOutlined />} onClick={resetFilters}>Limpiar</Button>
+            </div>
             <Divider style={{ margin: '12px 0' }} />
             
             <Space direction="vertical" style={{ width: '100%' }} size="small">
-              <Text type="secondary" style={{ fontSize: 12 }}>Metadata Prefix:</Text>
+              <Text strong style={{ fontSize: 12 }}>Metadata Prefix:</Text>
               <Select 
                 value={prefix} 
                 style={{ width: '100%' }} 
@@ -173,9 +224,10 @@ export default function Records() {
                 {METADATA_FORMATS.map(f => <Option key={f.value} value={f.value}>{f.label}</Option>)}
               </Select>
 
-              <Text type="secondary" style={{ fontSize: 12, marginTop: 12 }}>Rango de fechas (Cosecha):</Text>
+              <Text strong style={{ fontSize: 12, marginTop: 12 }}>Rango de Cosecha (Date):</Text>
               <RangePicker 
                 style={{ width: '100%' }} 
+                value={from && until ? [dayjs(from), dayjs(until)] : null}
                 onChange={(dates) => {
                   if (dates) {
                     onParamChange('from', dates[0].format('YYYY-MM-DD'))
@@ -188,10 +240,22 @@ export default function Records() {
                   }
                 }}
               />
+              
+              <Text strong style={{ fontSize: 12, marginTop: 12 }}>Ordenar resultados:</Text>
+              <Select 
+                value={sortOrder} 
+                style={{ width: '100%' }} 
+                onChange={setSortOrder}
+                suffixIcon={<SortAscendingOutlined />}
+              >
+                <Option value="newest">Más recientes primero</Option>
+                <Option value="oldest">Más antiguos primero</Option>
+                <Option value="title">Por título (A-Z)</Option>
+              </Select>
             </Space>
           </Card>
 
-          <Title level={5} style={{ marginBottom: 16 }}><FilterOutlined /> Colecciones</Title>
+          <Title level={5} style={{ marginBottom: 16 }}><FilterOutlined /> Colecciones OAI</Title>
           <Menu
             mode="vertical"
             selectedKeys={[set]}
@@ -220,7 +284,7 @@ export default function Records() {
                 {OAI_COLLECTIONS.find(c => c.key === set)?.label || 'Explorador'}
               </Title>
               <Text type="secondary">
-                {(totalCount > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length} de ${totalCount}` : 'Explorando metadatos...'}
+                {(totalCount > 0) ? `Mostrando registros ${cursor + 1} - ${cursor + filteredRecords.length} de ${totalCount}` : 'Cargando...'}
               </Text>
               {totalCount > 0 && (
                 <Progress 
@@ -233,20 +297,30 @@ export default function Records() {
               )}
             </Col>
             <Col>
-              <Space>
+              <Space wrap>
                 <Input 
                    placeholder="Filtrar en esta página..." 
                    prefix={<SearchOutlined />} 
                    value={localSearch}
                    onChange={e => setLocalSearch(e.target.value)}
-                   style={{ width: 250 }}
+                   style={{ width: 220 }}
                 />
-                <Tooltip title="Obtener link de cosecha OAI-PMH">
+                <Tooltip title="Descargar vista actual como CSV">
+                  <Button icon={<FileTextOutlined />} onClick={() => exportData('csv')} />
+                </Tooltip>
+                <Tooltip title="Descargar vista actual como JSON">
+                  <Button icon={<FileZipOutlined />} onClick={() => exportData('json')} />
+                </Tooltip>
+                <Tooltip title="Link de cosecha OAI-PMH (XML)">
                   <Button 
+                    type="primary"
                     icon={<DownloadOutlined />} 
-                    href={`/oai?verb=ListRecords&metadataPrefix=${prefix}${set !== 'all' ? `&set=${set}` : ''}`}
+                    href={`/oai?verb=ListRecords&metadataPrefix=${prefix}${set !== 'all' ? `&set=${set}` : ''}${from ? `&from=${from}`:''}${until?`&until=${until}`:''}`}
                     target="_blank"
-                  />
+                    style={{ background: '#328181', borderColor: '#328181' }}
+                  >
+                    XML
+                  </Button>
                 </Tooltip>
               </Space>
             </Col>
