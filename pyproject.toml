@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "impactu-oaiserver"
+version = "0.1.0"
+description = "OAI-PMH server for Impactu (serves CERIF output)."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [ { name = "", email = "" } ]
+license = { text = "MIT" }
+
+dependencies = [
+  "fastapi>=0.75",
+  "uvicorn[standard]>=0.18",
+  "pymongo>=4.0"
+]
+
+[project.scripts]
+impactu_oaiserver = "src.app:main"

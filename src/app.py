@@ -50,3 +50,11 @@ def stats():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("src.app:app", host="0.0.0.0", port=port, reload=True)
+
+def main() -> None:
+    """Console script entrypoint to run the FastAPI app with Uvicorn.
+
+    Reads `PORT` environment variable (defaults to 8000).
+    """
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("src.app:app", host="0.0.0.0", port=port)
