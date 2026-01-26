@@ -1,0 +1,23 @@
+services:
+  oaiserver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: impactu_oaiserver
+    ports:
+      - "${PORT:-9090}:${PORT:-9090}"
+    env_file:
+      - .env
+    environment:
+      - PORT=${PORT:-9090}
+      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017}
+      - DB_NAME=${DB_NAME:-kahi}
+      - OAI_BASE_URL=http://${OAI_HOST:-localhost}:${PORT:-9090}/oai
+    restart: always
+
+# Optional: define a network or external database if needed
+# If you want to include MongoDB in the same compose:
+#  mongodb:
+#    image: mongo:latest
+#    ports:
+#      - "27017:27017"

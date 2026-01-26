@@ -11,6 +11,16 @@ import traceback
 from xml.sax.saxutils import escape
 
 app = FastAPI()
+
+# Security warning: ensure this path is correct in your deployment image
+static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "out"))
+if os.path.exists(static_dir):
+    app.mount("/_next", StaticFiles(directory=os.path.join(static_dir, "_next")), name="next_static")
+    # Also mount public/media if it exists in the build output
+    media_dir = os.path.join(static_dir, "media")
+    if os.path.exists(media_dir):
+        app.mount("/media", StaticFiles(directory=media_dir), name="media_static")
+
 import logging as _logging
 _logging.basicConfig(level=_logging.INFO)
 
@@ -106,12 +116,19 @@ def root():
 
 @app.get("/{full_path:path}")
 def catch_all(full_path: str, request: Request):
-    # Serve SPA index for browser navigations (so client-side routing works)
+    # Try to serve a specific file from the static index if it exists
+    out_dir = os.path.dirname(_frontend_index_path())
+    file_path = os.path.join(out_dir, full_path)
+    
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # Otherwise, handle SPA routing: serve index.html for browser navigations
     accept = request.headers.get("accept", "")
     idx = _frontend_index_path()
     if "text/html" in accept.lower() and os.path.exists(idx):
         return FileResponse(idx, media_type="text/html")
-    # otherwise let FastAPI return 404 for unknown resources
+    
     return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 

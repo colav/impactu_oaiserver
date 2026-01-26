@@ -41,6 +41,7 @@ tmp/
 # dotenv env files
 .env
 .env.*
+!.env.example
 
 # Frontend (Next.js)
 /frontend/node_modules/
