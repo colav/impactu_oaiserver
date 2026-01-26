@@ -7,6 +7,16 @@ NS = "http://www.eurocris.org/ontology/cerif#"
 from .mongo_client import get_db
 import re
 
+SENSITIVE_PERSON_FIELDS = ["marital_status", "birthplace", "birthdate"]
+SENSITIVE_IDENTIFIER_SOURCES = [
+    "cédula de ciudadanía",
+    "cedula de ciudadania",
+    "cédula de extranjería",
+    "cedula de extranjeria",
+    "passport",
+    "pasaporte",
+]
+
 
 def _text(el, tag: str, value: Any):
     if value is None:
@@ -97,6 +107,11 @@ def _emit_person_entity(db, person_ref) -> etree._Element:
     person_doc = db["person"].find_one({"_id": pid}) if "person" in db.list_collection_names() else None
     if not person_doc:
         return None
+
+    # Remove sensitive information
+    for field in SENSITIVE_PERSON_FIELDS:
+        person_doc.pop(field, None)
+
     cent = etree.Element("cfEntity")
     _text(cent, "cfEntityId", person_doc.get("_id") or person_doc.get("id"))
     _text(cent, "cfEntityType", "Person")
@@ -110,6 +125,10 @@ def _emit_person_entity(db, person_ref) -> etree._Element:
         else:
             ne.text = str(n)
     for xid in person_doc.get("external_ids") or person_doc.get("identifiers") or []:
+        if isinstance(xid, dict):
+            src = (xid.get("source") or xid.get("provenance") or "").lower()
+            if src in SENSITIVE_IDENTIFIER_SOURCES:
+                continue
         _emit_identifier(cent, xid)
     return cent
 
@@ -375,6 +394,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         else:
             vid = str(xid)
             src = ""
+
+        if src in SENSITIVE_IDENTIFIER_SOURCES:
+            return
+
         if not vid:
             return
         vid = str(vid)
@@ -397,11 +420,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         el.text = vid
         if tag == "Identifier":
             # ensure required @type, slugify scheme to create valid URI fragment
-            s = (scheme or 'unknown').lower()
-            slug = re.sub(r'[^a-z0-9]+', '-', s)
+            s = (scheme or "unknown").lower()
+            slug = re.sub(r"[^a-z0-9]+", "-", s)
             type_uri = f"https://example.org/identifier-scheme/{slug}"
             el.set("type", type_uri)
-        return el
         return el
 
     def _add_org_identifier(parent, xid):
@@ -433,9 +455,8 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         el = etree.SubElement(parent, tag)
         el.text = vid
         if tag == "Identifier":
-            type_uri = f"https://example.org/identifier-scheme/{scheme or 'unknown'}"
+            type_uri = f"https://example.org/identifier-scheme/{scheme or "unknown"}"
             el.set("type", type_uri)
-        return el
         return el
 
     if local_name == "Publication":
@@ -496,6 +517,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
             _add_abstract(top, abs_)
 
     elif local_name == "Person":
+        # Remove sensitive information
+        for field in SENSITIVE_PERSON_FIELDS:
+            doc.pop(field, None)
+
         pn = etree.SubElement(top, "PersonName")
         family = doc.get("last_names") or doc.get("last_name") or []
         first = doc.get("first_names") or doc.get("first_name") or []
