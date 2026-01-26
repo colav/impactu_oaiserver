@@ -455,7 +455,7 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         el = etree.SubElement(parent, tag)
         el.text = vid
         if tag == "Identifier":
-            type_uri = f"https://example.org/identifier-scheme/{scheme or "unknown"}"
+            type_uri = f"https://example.org/identifier-scheme/{scheme or 'unknown'}"
             el.set("type", type_uri)
         return el
 
