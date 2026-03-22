@@ -8,10 +8,20 @@ services:
     env_file:
       - .env
     environment:
-      - PORT=${PORT:-9090}
+      - PORT=${BACKEND_PORT:-9091}
       - MONGO_URI=${MONGO_URI:-mongodb://localhost:27017}
       - DB_NAME=${DB_NAME:-kahi}
-      - OAI_BASE_URL=http://${OAI_HOST:-localhost}:${PORT:-9090}/oai
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: impactu_frontend
+    network_mode: host
+    environment:
+      - BACKEND_URL=http://localhost:${BACKEND_PORT:-9091}
+      - PORT=${PORT:-9090}
     restart: always
 
 # Optional: define a network or external database if needed
