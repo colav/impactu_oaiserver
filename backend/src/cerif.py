@@ -687,44 +687,530 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
                 _ac_el.text = "http://purl.org/coar/access_right/c_16ec"
 
     elif local_name == "Person":
-        # Remove sensitive information
+        import datetime as _dt
+
+        def _try_ts(v):
+            if not v:
+                return None
+            try:
+                return _dt.datetime.utcfromtimestamp(int(v)).strftime("%Y-%m-%d")
+            except Exception:
+                return str(v)
+
         for field in SENSITIVE_PERSON_FIELDS:
             doc.pop(field, None)
 
+        # --- PersonName ---
         pn = etree.SubElement(top, "PersonName")
         family = doc.get("last_names") or doc.get("last_name") or []
-        first = doc.get("first_names") or doc.get("first_name") or []
-        if isinstance(family, list):
-            fn = etree.SubElement(pn, "FamilyNames")
-            fn.text = " ".join([str(x) for x in family if x])
-        else:
-            fn = etree.SubElement(pn, "FamilyNames")
-            fn.text = str(family)
-        if isinstance(first, list):
-            ff = etree.SubElement(pn, "FirstNames")
-            ff.text = " ".join([str(x) for x in first if x])
-        else:
-            ff = etree.SubElement(pn, "FirstNames")
-            ff.text = str(first)
+        first  = doc.get("first_names") or doc.get("first_name") or []
+        fn_el = etree.SubElement(pn, "FamilyNames")
+        fn_el.text = " ".join([str(x) for x in (family if isinstance(family, list) else [family]) if x])
+        ff_el = etree.SubElement(pn, "FirstNames")
+        ff_el.text = " ".join([str(x) for x in (first  if isinstance(first,  list) else [first])  if x])
+
+        # --- Public identifiers (ORCID, ScopusAuthorID …) ---
         for xid in doc.get("external_ids") or doc.get("identifiers") or []:
             _add_person_identifier(top, xid)
 
+        # --- Aliases as ElectronicAddress (name variants) ---
+        for alias in doc.get("aliases") or []:
+            if alias:
+                al_el = etree.SubElement(top, "AlternativeName")
+                al_el.text = str(alias)
+
+        # --- Gender ---
+        if doc.get("sex"):
+            _text(top, "Gender", doc["sex"])
+
+        # --- Current affiliations ---
+        for aff in doc.get("affiliations") or []:
+            if not isinstance(aff, dict):
+                continue
+            aff_el  = etree.SubElement(top, "Affiliation")
+            org_el  = etree.SubElement(aff_el, "OrgUnit")
+            aff_id  = aff.get("id")
+            if aff_id:
+                org_el.set("id", str(aff_id))
+            aff_name = aff.get("name")
+            if aff_name:
+                n_el = etree.SubElement(org_el, "Name")
+                n_el.text = str(aff_name)
+                n_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+            for at in aff.get("types") or []:
+                tv = at.get("type") if isinstance(at, dict) else at
+                if tv:
+                    _text(org_el, "Type", str(tv))
+                    break
+            sd = aff.get("start_date")
+            ed = aff.get("end_date")
+            if sd:
+                _text(aff_el, "StartDate", _try_ts(sd) or str(sd))
+            if ed:
+                _text(aff_el, "EndDate", _try_ts(ed) or str(ed))
+
+        # --- Academic degrees ---
+        for deg in doc.get("degrees") or []:
+            if not isinstance(deg, dict):
+                continue
+            deg_el = etree.SubElement(top, "AcademicDegree")
+            if deg.get("degree"):
+                _text(deg_el, "Degree", deg["degree"])
+            for inst in deg.get("institutions") or []:
+                if isinstance(inst, dict) and inst.get("name"):
+                    _text(deg_el, "Institution", inst["name"])
+                elif isinstance(inst, str) and inst:
+                    _text(deg_el, "Institution", inst)
+            if deg.get("date"):
+                try:
+                    dv = _dt.datetime.utcfromtimestamp(int(deg["date"])).strftime("%Y-%m-%d")
+                except Exception:
+                    dv = str(deg["date"])
+                _text(deg_el, "Date", dv)
+
+        # --- Keywords / research areas ---
+        for kw in doc.get("keywords") or []:
+            if kw:
+                kw_el = etree.SubElement(top, "Keyword")
+                kw_el.text = str(kw)
+                kw_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+        # --- Metrics ---
+        if doc.get("products_count") is not None:
+            _text(top, "ProductsCount", str(doc["products_count"]))
+
     elif local_name == "OrgUnit":
-        names = doc.get("names") or doc.get("name")
-        if isinstance(names, list):
-            n = etree.SubElement(top, "Name")
-            first = names[0]
-            if isinstance(first, dict):
-                val = first.get("name") or first.get("title") or str(first)
+        # --- All names with lang ---
+        names = doc.get("names") or []
+        if isinstance(names, dict):
+            names = [names]
+        for n in names:
+            n_el = etree.SubElement(top, "Name")
+            if isinstance(n, dict):
+                val  = n.get("name") or n.get("title") or ""
+                lang = n.get("lang") or "en"
             else:
-                val = first
-            n.text = str(val)
-            n.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
-        elif names:
-            n = etree.SubElement(top, "Name")
-            n.text = str(names)
-            n.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+                val  = str(n)
+                lang = "en"
+            n_el.text = str(val)
+            n_el.set("{http://www.w3.org/XML/1998/namespace}lang", lang)
+
+        # --- Abbreviations / acronyms ---
+        for abbr in doc.get("abbreviations") or []:
+            if abbr:
+                _text(top, "Acronym", str(abbr))
+
+        # --- Type ---
+        for t in doc.get("types") or []:
+            tv = t.get("type") if isinstance(t, dict) else t
+            if tv:
+                _text(top, "Type", str(tv))
+                break
+
+        # --- Year founded ---
+        if doc.get("year_established"):
+            _text(top, "YearEstablished", str(doc["year_established"]))
+
+        # --- Identifiers (ROR, GRID, ISNI …) ---
         for xid in doc.get("external_ids") or doc.get("identifiers") or []:
             _add_org_identifier(top, xid)
+
+        # --- External URLs as ElectronicAddress ---
+        for url_entry in doc.get("external_urls") or []:
+            url_val = url_entry.get("url") if isinstance(url_entry, dict) else str(url_entry)
+            if url_val:
+                _text(top, "ElectronicAddress", str(url_val))
+
+        # --- Addresses ---
+        for addr in doc.get("addresses") or []:
+            if not isinstance(addr, dict):
+                continue
+            parts = [addr.get("city"), addr.get("state"), addr.get("country") or addr.get("country_code")]
+            adr_str = ", ".join([str(p) for p in parts if p])
+            if adr_str:
+                _text(top, "PostalAddress", adr_str)
+
+        # --- Description ---
+        for desc in doc.get("description") or []:
+            if isinstance(desc, dict):
+                dv = desc.get("description") or desc.get("text") or desc.get("value")
+            elif isinstance(desc, str):
+                dv = desc
+            else:
+                dv = None
+            if dv:
+                _text(top, "Description", str(dv))
+                break
+
+    elif local_name == "Project":
+        import datetime as _dt
+
+        def _try_ts(v):
+            if not v:
+                return None
+            try:
+                return _dt.datetime.utcfromtimestamp(int(v)).strftime("%Y-%m-%d")
+            except Exception:
+                return str(v) if v else None
+
+        # --- Titles ---
+        for t in doc.get("titles") or []:
+            if isinstance(t, dict):
+                tv   = t.get("title") or t.get("name") or ""
+                lang = t.get("lang") or "es"
+            else:
+                tv   = str(t)
+                lang = "es"
+            if tv:
+                te = etree.SubElement(top, "Title")
+                te.text = tv
+                te.set("{http://www.w3.org/XML/1998/namespace}lang", lang)
+
+        # --- Abstract ---
+        if doc.get("abstract"):
+            ab_el = etree.SubElement(top, "Abstract")
+            ab_el.text = str(doc["abstract"])
+            ab_el.set("{http://www.w3.org/XML/1998/namespace}lang", "es")
+
+        # --- Start / End dates ---
+        start = _try_ts(doc.get("date_init")) or (str(doc["year_init"]) if doc.get("year_init") else None)
+        end   = _try_ts(doc.get("date_end"))  or (str(doc["year_end"])  if doc.get("year_end")  else None)
+        if start:
+            _text(top, "StartDate", start)
+        if end:
+            _text(top, "EndDate", end)
+
+        # --- Identifiers ---
+        for xid in doc.get("external_ids") or []:
+            _add_identifier(top, xid)
+
+        # --- External URLs ---
+        for url_entry in doc.get("external_urls") or []:
+            url_val = url_entry.get("url") if isinstance(url_entry, dict) else str(url_entry)
+            if url_val:
+                _text(top, "ElectronicAddress", str(url_val))
+
+        # --- Participating groups / org units ---
+        for grp in doc.get("groups") or []:
+            if not isinstance(grp, dict):
+                continue
+            grp_el  = etree.SubElement(top, "Uses")
+            org_el  = etree.SubElement(grp_el, "OrgUnit")
+            grp_id  = grp.get("id")
+            if grp_id:
+                org_el.set("id", str(grp_id))
+            if grp.get("name"):
+                gn_el = etree.SubElement(org_el, "Name")
+                gn_el.text = str(grp["name"])
+                gn_el.set("{http://www.w3.org/XML/1998/namespace}lang", "es")
+
+        # --- Members (authors / investigators) ---
+        _person_coll_exists = "person" in db.list_collection_names()
+        authors = doc.get("authors") or []
+        if authors:
+            members_el = etree.SubElement(top, "Members")
+            for author in authors:
+                if not isinstance(author, dict):
+                    continue
+                m_el = etree.SubElement(members_el, "Member")
+                person_inner = etree.SubElement(m_el, "Person")
+                pid = author.get("id")
+                if pid:
+                    person_inner.set("id", str(pid))
+                    # enrich with ORCID from person collection
+                    if _person_coll_exists:
+                        pdoc = db["person"].find_one({"_id": pid}, {"external_ids": 1})
+                        if pdoc:
+                            for xid in pdoc.get("external_ids") or []:
+                                if isinstance(xid, dict) and (xid.get("source") or "").lower() == "orcid":
+                                    _add_person_identifier(person_inner, xid)
+                dn_el = etree.SubElement(person_inner, "DisplayName")
+                dn_el.text = str(author.get("full_name") or "")
+                for aff in author.get("affiliations") or []:
+                    aff_el = etree.SubElement(m_el, "Affiliation")
+                    org_el = etree.SubElement(aff_el, "OrgUnit")
+                    aff_id = aff.get("id")
+                    if aff_id:
+                        org_el.set("id", str(aff_id))
+                    aff_name = aff.get("name")
+                    if aff_name:
+                        an_el = etree.SubElement(org_el, "Name")
+                        an_el.text = str(aff_name)
+                        an_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+    elif local_name == "Patent":
+        import datetime as _dt
+
+        def _try_ts(v):
+            if not v:
+                return None
+            try:
+                return _dt.datetime.utcfromtimestamp(int(v)).strftime("%Y-%m-%d")
+            except Exception:
+                return str(v) if v else None
+
+        # --- Titles ---
+        for t in doc.get("titles") or []:
+            if isinstance(t, dict):
+                tv   = t.get("title") or t.get("name") or ""
+                lang = t.get("lang") or "es"
+            else:
+                tv   = str(t)
+                lang = "es"
+            if tv:
+                te = etree.SubElement(top, "Title")
+                te.text = tv
+                te.set("{http://www.w3.org/XML/1998/namespace}lang", lang)
+
+        # --- Dates from updated field ---
+        for upd in doc.get("updated") or []:
+            if isinstance(upd, dict) and upd.get("time"):
+                dv = _try_ts(upd["time"])
+                if dv:
+                    _text(top, "ApprovalDate", dv)
+                    break
+
+        # --- Identifiers ---
+        for xid in doc.get("external_ids") or []:
+            _add_identifier(top, xid)
+
+        # --- External URLs ---
+        for url_entry in doc.get("external_urls") or []:
+            url_val = url_entry.get("url") if isinstance(url_entry, dict) else str(url_entry)
+            if url_val:
+                _text(top, "ElectronicAddress", str(url_val))
+
+        # --- Inventors (authors) ---
+        _person_coll_exists = "person" in db.list_collection_names()
+        authors = doc.get("authors") or []
+        if authors:
+            inventors_el = etree.SubElement(top, "Inventors")
+            for _rank, author in enumerate(authors, start=1):
+                if not isinstance(author, dict):
+                    continue
+                inv_el     = etree.SubElement(inventors_el, "Inventor")
+                inv_el.set("rank", str(_rank))
+                person_el  = etree.SubElement(inv_el, "Person")
+                pid = author.get("id")
+                if pid:
+                    person_el.set("id", str(pid))
+                    if _person_coll_exists:
+                        pdoc = db["person"].find_one({"_id": pid}, {"external_ids": 1, "first_names": 1, "last_names": 1})
+                        if pdoc:
+                            pn_el = etree.SubElement(person_el, "PersonName")
+                            _fl = pdoc.get("last_names") or []
+                            _fn = pdoc.get("first_names") or []
+                            fam_el = etree.SubElement(pn_el, "FamilyNames")
+                            fam_el.text = " ".join([str(x) for x in (_fl if isinstance(_fl, list) else [_fl]) if x])
+                            fir_el = etree.SubElement(pn_el, "FirstNames")
+                            fir_el.text = " ".join([str(x) for x in (_fn if isinstance(_fn, list) else [_fn]) if x])
+                            for xid in pdoc.get("external_ids") or []:
+                                if isinstance(xid, dict) and (xid.get("source") or "").lower() == "orcid":
+                                    _add_person_identifier(person_el, xid)
+                dn_el = etree.SubElement(inv_el, "DisplayName")
+                dn_el.text = str(author.get("full_name") or "")
+                for aff in author.get("affiliations") or []:
+                    aff_el = etree.SubElement(inv_el, "Affiliation")
+                    org_el = etree.SubElement(aff_el, "OrgUnit")
+                    aff_id = aff.get("id")
+                    if aff_id:
+                        org_el.set("id", str(aff_id))
+                    aff_name = aff.get("name")
+                    if aff_name:
+                        an_el = etree.SubElement(org_el, "Name")
+                        an_el.text = str(aff_name)
+                        an_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+    elif local_name == "Event":
+        import datetime as _dt
+
+        def _try_ts(v):
+            if not v:
+                return None
+            try:
+                return _dt.datetime.utcfromtimestamp(int(v)).strftime("%Y-%m-%d")
+            except Exception:
+                return str(v) if v else None
+
+        # --- Titles ---
+        for t in doc.get("titles") or []:
+            if isinstance(t, dict):
+                tv   = t.get("title") or t.get("name") or ""
+                lang = t.get("lang") or "es"
+            else:
+                tv   = str(t)
+                lang = "es"
+            if tv:
+                te = etree.SubElement(top, "Title")
+                te.text = tv
+                te.set("{http://www.w3.org/XML/1998/namespace}lang", lang)
+
+        # --- Abstract ---
+        if doc.get("abstract"):
+            ab_el = etree.SubElement(top, "Abstract")
+            ab_el.text = str(doc["abstract"])
+            ab_el.set("{http://www.w3.org/XML/1998/namespace}lang", "es")
+
+        # --- Dates ---
+        date_held = _try_ts(doc.get("date_held")) or (str(doc["year_held"]) if doc.get("year_held") else None)
+        if date_held:
+            _text(top, "StartDate", date_held)
+
+        # --- Identifiers ---
+        for xid in doc.get("external_ids") or []:
+            _add_identifier(top, xid)
+
+        # --- External URLs ---
+        for url_entry in doc.get("external_urls") or []:
+            url_val = url_entry.get("url") if isinstance(url_entry, dict) else str(url_entry)
+            if url_val:
+                _text(top, "ElectronicAddress", str(url_val))
+
+        # --- Organiser groups ---
+        for grp in doc.get("groups") or []:
+            if not isinstance(grp, dict):
+                continue
+            org_el = etree.SubElement(top, "Organiser")
+            ou_el  = etree.SubElement(org_el, "OrgUnit")
+            if grp.get("id"):
+                ou_el.set("id", str(grp["id"]))
+            if grp.get("name"):
+                gn_el = etree.SubElement(ou_el, "Name")
+                gn_el.text = str(grp["name"])
+                gn_el.set("{http://www.w3.org/XML/1998/namespace}lang", "es")
+
+        # --- Speakers / presenters ---
+        _person_coll_exists = "person" in db.list_collection_names()
+        authors = doc.get("authors") or []
+        if authors:
+            speakers_el = etree.SubElement(top, "Speakers")
+            for author in authors:
+                if not isinstance(author, dict):
+                    continue
+                sp_el     = etree.SubElement(speakers_el, "Speaker")
+                person_el = etree.SubElement(sp_el, "Person")
+                pid = author.get("id")
+                if pid:
+                    person_el.set("id", str(pid))
+                    if _person_coll_exists:
+                        pdoc = db["person"].find_one({"_id": pid}, {"external_ids": 1})
+                        if pdoc:
+                            for xid in pdoc.get("external_ids") or []:
+                                if isinstance(xid, dict) and (xid.get("source") or "").lower() == "orcid":
+                                    _add_person_identifier(person_el, xid)
+                dn_el = etree.SubElement(sp_el, "DisplayName")
+                dn_el.text = str(author.get("full_name") or "")
+                for aff in author.get("affiliations") or []:
+                    aff_el = etree.SubElement(sp_el, "Affiliation")
+                    org_el = etree.SubElement(aff_el, "OrgUnit")
+                    aff_id = aff.get("id")
+                    if aff_id:
+                        org_el.set("id", str(aff_id))
+                    aff_name = aff.get("name")
+                    if aff_name:
+                        an_el = etree.SubElement(org_el, "Name")
+                        an_el.text = str(aff_name)
+                        an_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+    elif local_name == "Product":
+        # sources collection — represents journals/publishing venues
+        # --- All names with lang ---
+        for n in doc.get("names") or []:
+            n_el = etree.SubElement(top, "Title")
+            if isinstance(n, dict):
+                val  = n.get("name") or ""
+                lang = n.get("lang") or "en"
+            else:
+                val  = str(n)
+                lang = "en"
+            n_el.text = str(val)
+            n_el.set("{http://www.w3.org/XML/1998/namespace}lang", lang)
+
+        # --- Abbreviations ---
+        for abbr in doc.get("abbreviations") or []:
+            if abbr:
+                _text(top, "Acronym", str(abbr))
+
+        # --- Publisher ---
+        pub = doc.get("publisher")
+        if isinstance(pub, dict) and pub.get("name"):
+            _text(top, "Publisher", pub["name"])
+        elif isinstance(pub, str) and pub:
+            _text(top, "Publisher", pub)
+
+        # --- Identifiers: ISSN, EISSN first, then others ---
+        for xid in doc.get("external_ids") or []:
+            if not isinstance(xid, dict):
+                continue
+            src = (xid.get("source") or "").lower()
+            val = xid.get("id")
+            if not val:
+                continue
+            if src == "issn":
+                _text(top, "ISSN", str(val))
+            elif src in ("eissn", "e-issn"):
+                _text(top, "EISSN", str(val))
+            else:
+                _add_identifier(top, xid)
+
+        # --- Electronic addresses / URLs ---
+        for url_entry in doc.get("external_urls") or []:
+            url_val = url_entry.get("url") if isinstance(url_entry, dict) else str(url_entry)
+            if url_val:
+                _text(top, "ElectronicAddress", str(url_val))
+
+        # --- Open access info ---
+        _coar_access_ns = "https://www.openaire.eu/cerif-profile/vocab/COAR_Access_Rights_1_0"
+        if doc.get("open_access_start_year") is not None:
+            _text(top, "OpenAccessStartYear", str(doc["open_access_start_year"]))
+            ac_el = etree.SubElement(top, "{" + _coar_access_ns + "}Access")
+            ac_el.text = "http://purl.org/coar/access_right/c_abf2"
+
+        # --- Licenses ---
+        for lic in doc.get("licenses") or []:
+            if not isinstance(lic, dict):
+                continue
+            lic_type = lic.get("type") or lic.get("url")
+            if lic_type:
+                _text(top, "License", str(lic_type))
+                break
+
+        # --- Keywords ---
+        for kw in doc.get("keywords") or []:
+            if kw:
+                kw_el = etree.SubElement(top, "Keyword")
+                kw_el.text = str(kw)
+                kw_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+        # --- Languages ---
+        for lang in doc.get("languages") or []:
+            if lang:
+                _text(top, "Language", str(lang))
+
+        # --- Subjects ---
+        for subj_group in doc.get("subjects") or []:
+            if not isinstance(subj_group, dict):
+                continue
+            for subj in subj_group.get("subjects") or []:
+                if isinstance(subj, dict):
+                    sv = subj.get("name") or subj.get("id")
+                elif isinstance(subj, str):
+                    sv = subj
+                else:
+                    continue
+                if sv:
+                    su_el = etree.SubElement(top, "Subject")
+                    su_el.text = str(sv)
+
+        # --- Review process ---
+        for rp in doc.get("review_process") or doc.get("review_processes") or []:
+            if isinstance(rp, str) and rp:
+                _text(top, "ReviewProcess", rp)
+                break
+            elif isinstance(rp, dict):
+                rv = rp.get("type") or rp.get("name")
+                if rv:
+                    _text(top, "ReviewProcess", str(rv))
+                    break
 
     return top
