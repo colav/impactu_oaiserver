@@ -17,10 +17,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        - BACKEND_URL=http://localhost:${BACKEND_PORT:-9091}
     container_name: impactu_frontend
     network_mode: host
     environment:
-      - BACKEND_URL=http://localhost:${BACKEND_PORT:-9091}
       - PORT=${PORT:-9090}
     restart: always
 
