@@ -99,7 +99,7 @@ export default function Home() {
           </Paragraph>
           <Alert
             message="Cumplimiento de Estándares"
-            description="Este endpoint ha sido validado contra los esquemas oficiales de OAI-PMH v2.0 y soporta prefijos de metadatos oai_dc y oai_cerif."
+            description="Este endpoint ha sido validado contra los esquemas oficiales de OAI-PMH v2.0 y el perfil OpenAIRE CERIF v1.2. El prefijo de metadatos soportado es oai_cerif_openaire. Endpoint para cosecha: https://oai.impactu.colav.co/oai"
             type="info"
             showIcon
             icon={<InfoCircleOutlined />}
