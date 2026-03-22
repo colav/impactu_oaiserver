@@ -333,6 +333,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
             src = None
         if vid is None:
             return
+        # Serialize compound (dict) IDs (e.g. {"COD_RH": "0001769468"})
+        if isinstance(vid, dict):
+            pairs = [f"{k}:{v}" for k, v in vid.items()]
+            vid = "|".join(pairs)
         vid = str(vid)
         scheme = (src or _detect_scheme(vid) or "other").lower()
 
@@ -400,6 +404,10 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
 
         if not vid:
             return
+        # Serialize compound (dict) IDs (e.g. {"COD_RH": "0001769468"})
+        if isinstance(vid, dict):
+            pairs = [f"{k}:{v}" for k, v in vid.items()]
+            vid = "|".join(pairs)
         vid = str(vid)
         scheme = src or _detect_scheme(vid)
         scheme = (scheme or "").lower()
@@ -460,61 +468,223 @@ def doc_to_cerif_element(doc: dict, collection: str = "entity", metadataPrefix: 
         return el
 
     if local_name == "Publication":
+        import datetime as _dt
+
+        # --- 1. Refine COAR type based on actual types in the document ---
+        _coar_type_map = {
+            "article": "http://purl.org/coar/resource_type/c_6501",
+            "journal-article": "http://purl.org/coar/resource_type/c_6501",
+            "journal article": "http://purl.org/coar/resource_type/c_6501",
+            "book": "http://purl.org/coar/resource_type/c_2f33",
+            "book-chapter": "http://purl.org/coar/resource_type/c_3248",
+            "book chapter": "http://purl.org/coar/resource_type/c_3248",
+            "conference paper": "http://purl.org/coar/resource_type/c_5794",
+            "conference-paper": "http://purl.org/coar/resource_type/c_5794",
+            "proceedings article": "http://purl.org/coar/resource_type/c_5794",
+            "thesis": "http://purl.org/coar/resource_type/c_46ec",
+            "dissertation": "http://purl.org/coar/resource_type/c_46ec",
+            "report": "http://purl.org/coar/resource_type/c_93fc",
+            "preprint": "http://purl.org/coar/resource_type/c_816b",
+            "review": "http://purl.org/coar/resource_type/c_efa0",
+            "editorial": "http://purl.org/coar/resource_type/c_b239",
+            "letter": "http://purl.org/coar/resource_type/c_0857",
+        }
+        _vocab_pub_ns = "https://www.openaire.eu/cerif-profile/vocab/COAR_Publication_Types"
+        for _dt_entry in doc.get("types") or []:
+            _t_val = (_dt_entry.get("type") or "").lower() if isinstance(_dt_entry, dict) else str(_dt_entry).lower()
+            if _t_val in _coar_type_map:
+                _type_el = top.find("{" + _vocab_pub_ns + "}Type")
+                if _type_el is not None:
+                    _type_el.text = _coar_type_map[_t_val]
+                break
+
+        # --- 2. Titles — preserve lang from titles array ---
         titles = doc.get("titles") or doc.get("names") or []
         if isinstance(titles, dict):
             titles = [titles]
         if titles:
             for t in titles:
                 if isinstance(t, dict):
-                    _add_title(top, t.get("title") or t.get("name"))
-                else:
-                    _add_title(top, t)
+                    title_val = t.get("title") or t.get("name")
+                    lang = t.get("lang") or "en"
+                    if title_val:
+                        t_el = etree.SubElement(top, "Title")
+                        t_el.text = str(title_val)
+                        t_el.set("{http://www.w3.org/XML/1998/namespace}lang", lang)
+                elif t:
+                    t_el = etree.SubElement(top, "Title")
+                    t_el.text = str(t)
+                    t_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
         else:
             t = doc.get("title") or doc.get("name")
             _add_title(top, t)
-        # collect abstract and identifiers, but emit them after PublicationDate to match OpenAIRE ordering
+
+        # --- 3. Abstract (collected; emitted after identifiers) ---
         abs_ = doc.get("abstracts") or doc.get("descriptions") or doc.get("abstract")
-        identifiers = list(doc.get("external_ids") or doc.get("identifiers") or [])
+
+        # --- 4. Identifiers: top-level doi + external_ids (dedup doi) ---
+        identifiers = []
+        top_doi = doc.get("doi")
+        if top_doi:
+            identifiers.append({"source": "doi", "id": top_doi})
+        for xid in doc.get("external_ids") or doc.get("identifiers") or []:
+            if isinstance(xid, dict) and (xid.get("source") or "").lower() == "doi" and top_doi:
+                continue  # already included via top-level doi field
+            identifiers.append(xid)
+
+        # --- 5. Publication date: date_published (unix ts) → year_published → year → updated ---
         pubdate = None
-        if doc.get("publication_date"):
-            pubdate = doc.get("publication_date")
+        if doc.get("date_published"):
+            try:
+                pubdate = _dt.datetime.utcfromtimestamp(int(doc["date_published"])).strftime("%Y-%m-%d")
+            except Exception:
+                pubdate = str(doc["date_published"])
+        elif doc.get("publication_date"):
+            try:
+                pubdate = _dt.datetime.utcfromtimestamp(int(doc["publication_date"])).strftime("%Y-%m-%d")
+            except Exception:
+                pubdate = str(doc["publication_date"])
+        elif doc.get("year_published"):
+            pubdate = str(doc["year_published"])
         elif doc.get("year"):
-            pubdate = doc.get("year")
+            pubdate = str(doc["year"])
         elif doc.get("updated"):
             if isinstance(doc.get("updated"), list) and doc.get("updated"):
-                pubdate = doc.get("updated")[-1].get("time")
+                _raw_t = doc["updated"][-1].get("time")
+                if _raw_t:
+                    try:
+                        pubdate = _dt.datetime.utcfromtimestamp(int(_raw_t)).strftime("%Y-%m-%d")
+                    except Exception:
+                        pubdate = str(_raw_t)
         if pubdate:
             pd = etree.SubElement(top, "PublicationDate")
             pd.text = str(pubdate)
-            # emit bibliographic fields that come before the publication identifiers
-            bib = doc.get("bibliographic_info") or {}
-            # common keys: number, volume, issue, edition, start_page, end_page
-            num = doc.get("number") or bib.get("number")
-            vol = doc.get("volume") or bib.get("volume")
-            iss = doc.get("issue") or bib.get("issue")
-            ed = doc.get("edition") or bib.get("edition")
-            sp = doc.get("start_page") or bib.get("start_page") or bib.get("page_start") or None
-            ep = doc.get("end_page") or bib.get("end_page") or bib.get("page_end") or None
-            if num:
-                _text(top, "Number", num)
-            if vol:
-                _text(top, "Volume", vol)
-            if iss:
-                _text(top, "Issue", iss)
-            if ed:
-                _text(top, "Edition", ed)
-            if sp:
-                _text(top, "StartPage", sp)
-            if ep:
-                _text(top, "EndPage", ep)
 
+        # --- 6. Bibliographic fields ---
+        bib = doc.get("bibliographic_info") or {}
+        num = doc.get("number") or bib.get("number")
+        vol = doc.get("volume") or bib.get("volume")
+        iss = doc.get("issue") or bib.get("issue")
+        ed = doc.get("edition") or bib.get("edition")
+        sp = doc.get("start_page") or bib.get("start_page") or bib.get("page_start") or None
+        ep = doc.get("end_page") or bib.get("end_page") or bib.get("page_end") or None
+        if num:
+            _text(top, "Number", num)
+        if vol:
+            _text(top, "Volume", vol)
+        if iss:
+            _text(top, "Issue", iss)
+        if ed:
+            _text(top, "Edition", ed)
+        if sp:
+            _text(top, "StartPage", sp)
+        if ep:
+            _text(top, "EndPage", ep)
+
+        # --- 7. Identifiers ---
         for xid in identifiers:
             _add_identifier(top, xid)
-        # emit abstract after PublicationDate+Identifiers to follow XSD ordering
+
+        # --- 8. Abstract ---
         if isinstance(abs_, list):
             _add_abstract(top, abs_[0] if abs_ else None)
         else:
             _add_abstract(top, abs_)
+
+        # --- 9. Keywords ---
+        for kw in doc.get("keywords") or []:
+            if kw:
+                kw_el = etree.SubElement(top, "Keyword")
+                kw_el.text = str(kw)
+                kw_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+        # --- 10. Authors with person enrichment (ORCID) and inline affiliations ---
+        authors = doc.get("authors") or []
+        _person_coll_exists = "person" in db.list_collection_names()
+        if authors:
+            authors_el = etree.SubElement(top, "Authors")
+            for _rank, author in enumerate(authors, start=1):
+                author_el = etree.SubElement(authors_el, "Author")
+                author_el.set("rank", str(_rank))
+
+                # Best-effort lookup in person collection to enrich with ORCID etc.
+                person_id = author.get("id")
+                person_doc = None
+                if person_id and _person_coll_exists:
+                    person_doc = db["person"].find_one({"_id": person_id})
+
+                if person_doc:
+                    person_el = etree.SubElement(author_el, "Person")
+                    person_el.set("id", str(person_doc.get("_id", "")))
+                    pn_el = etree.SubElement(person_el, "PersonName")
+                    _family = person_doc.get("last_names") or person_doc.get("last_name") or []
+                    _first_n = person_doc.get("first_names") or person_doc.get("first_name") or []
+                    fn_el = etree.SubElement(pn_el, "FamilyNames")
+                    fn_el.text = " ".join(str(x) for x in (_family if isinstance(_family, list) else [_family]) if x)
+                    ff_el = etree.SubElement(pn_el, "FirstNames")
+                    ff_el.text = " ".join(str(x) for x in (_first_n if isinstance(_first_n, list) else [_first_n]) if x)
+                    # Only safe identifiers: ORCID, ISNI, ScopusAuthorID, ResearcherID
+                    # _add_person_identifier already filters sensitive ID sources (cédulas, passport)
+                    for xid in person_doc.get("external_ids") or []:
+                        _add_person_identifier(person_el, xid)
+
+                # Always emit DisplayName from inline data
+                dn_el = etree.SubElement(author_el, "DisplayName")
+                dn_el.text = str(author.get("full_name") or "")
+
+                # Affiliations for this author (inline — no extra DB hit needed)
+                for aff in author.get("affiliations") or []:
+                    aff_id = aff.get("id")
+                    aff_el = etree.SubElement(author_el, "Affiliation")
+                    org_el = etree.SubElement(aff_el, "OrgUnit")
+                    if aff_id:
+                        org_el.set("id", str(aff_id))
+                    aff_name_val = aff.get("name") or ""
+                    if aff_name_val:
+                        aff_name_el = etree.SubElement(org_el, "Name")
+                        aff_name_el.text = str(aff_name_val)
+                        aff_name_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+
+        # --- 11. IsPartOf — journal/source with ISSN and publisher ---
+        source_info = doc.get("source")
+        if isinstance(source_info, dict) and source_info:
+            is_part_el = etree.SubElement(top, "IsPartOf")
+            journal_el = etree.SubElement(is_part_el, "Journal")
+            src_names = source_info.get("names") or []
+            src_name_val = source_info.get("name")
+            jname = None
+            if src_names:
+                _first_src = src_names[0]
+                jname = _first_src.get("name") if isinstance(_first_src, dict) else str(_first_src)
+            elif src_name_val:
+                jname = str(src_name_val)
+            if jname:
+                jt_el = etree.SubElement(journal_el, "Title")
+                jt_el.text = jname
+                jt_el.set("{http://www.w3.org/XML/1998/namespace}lang", "en")
+            for xid in source_info.get("external_ids") or []:
+                if isinstance(xid, dict):
+                    _src_scheme = (xid.get("source") or "").lower()
+                    _val = xid.get("id")
+                    if _val:
+                        if _src_scheme == "issn":
+                            _text(journal_el, "ISSN", _val)
+                        elif _src_scheme == "eissn":
+                            _text(journal_el, "EISSN", _val)
+            publisher = source_info.get("publisher")
+            if isinstance(publisher, dict) and publisher.get("name"):
+                _text(journal_el, "Publisher", publisher["name"])
+
+        # --- 12. Access rights (COAR vocabulary) ---
+        oa = doc.get("open_access")
+        if isinstance(oa, dict):
+            _coar_access_ns = "https://www.openaire.eu/cerif-profile/vocab/COAR_Access_Rights_1_0"
+            if oa.get("is_open_access"):
+                _ac_el = etree.SubElement(top, "{" + _coar_access_ns + "}Access")
+                _ac_el.text = "http://purl.org/coar/access_right/c_abf2"
+            else:
+                _ac_el = etree.SubElement(top, "{" + _coar_access_ns + "}Access")
+                _ac_el.text = "http://purl.org/coar/access_right/c_16ec"
 
     elif local_name == "Person":
         # Remove sensitive information

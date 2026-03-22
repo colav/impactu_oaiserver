@@ -52,6 +52,11 @@ start() {
     fi
     echo $! > "$PIDFILE"
     echo "Started (pid=$(cat $PIDFILE)), logs: $LOGFILE"
+    echo ""
+    echo "  Service URL : http://localhost:${PORT}"
+    echo "  OAI-PMH     : http://localhost:${PORT}/oai?verb=Identify"
+    echo "  Stats       : http://localhost:${PORT}/stats"
+    echo ""
 }
 
 stop() {
