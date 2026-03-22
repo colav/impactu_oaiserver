@@ -17,7 +17,7 @@ export default function RecordDetail() {
   useEffect(() => {
     if (!id) return
     const identifier = decodeURIComponent(id)
-    const url = `/oai?verb=GetRecord&identifier=${encodeURIComponent(identifier)}&metadataPrefix=cerif`
+    const url = `/oai?verb=GetRecord&identifier=${encodeURIComponent(identifier)}&metadataPrefix=oai_cerif_openaire`
     fetch(url)
       .then(res => res.text())
       .then(t => {

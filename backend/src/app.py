@@ -44,8 +44,6 @@ def oai_endpoint(
         host = xf or host_hdr
         scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
         base = f"{scheme}://{host}{request.url.path}"
-        # OAI_BASE_URL env var always wins (useful behind reverse proxies)
-        base = os.environ.get("OAI_BASE_URL") or base
         _logging.info(f"OAI incoming headers: X-Forwarded-Host={xf!r}, Host={host_hdr!r}")
         _logging.info(f"Computed base URL for OAI responses: {base}")
         xml = handle_oai(args, base_url=base)

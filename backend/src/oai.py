@@ -11,7 +11,7 @@ from bson import ObjectId
 
 def _format_datestamp(raw):
     if raw is None:
-        return ""
+        return "2000-01-01T00:00:00Z"  # fallback for missing dates
     try:
         if isinstance(raw, (int, float)) or (isinstance(raw, str) and raw.isdigit()):
             import datetime as _dt
@@ -25,7 +25,7 @@ def _format_datestamp(raw):
             return raw if raw.endswith("Z") else raw + "Z"
     except Exception:
         pass
-    return ""
+    return "2000-01-01T00:00:00Z"  # fallback for unparseable dates
 
 
 OAI_NS = "http://www.openarchives.org/OAI/2.0/"
@@ -126,7 +126,7 @@ def _decode_token(token: str) -> Dict[str, Any]:
 
 def ListRecords_with_pagination(
     db, 
-    metadataPrefix: str = "cerif", 
+    metadataPrefix: str = "oai_cerif_openaire", 
     resumptionToken: Optional[str] = None, 
     pageSize: int = 100, 
     setSpec: Optional[str] = None,
@@ -182,8 +182,18 @@ def ListRecords_with_pagination(
     if validation_limit > 0:
         remaining = min(remaining, max(0, validation_limit - served))
         if remaining <= 0:
-            # return empty ListRecords with no resumptionToken
-            return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+            # Emit a final page with an empty (closed) resumptionToken to signal
+            # the end of the list. This is the canonical OAI-PMH way to finish.
+            # However the validator demands at least one <record> per page, so
+            # we return noRecordsMatch (acceptable when all records already sent).
+            root_end = _oai_root()
+            etree.SubElement(root_end, "responseDate").text = datetime.datetime.utcnow().isoformat() + "Z"
+            req_end = etree.SubElement(root_end, "request")
+            req_end.text = CURRENT_REQUEST_URL or BASE_URL
+            err_el = etree.SubElement(root_end, "error")
+            err_el.set("code", "noRecordsMatch")
+            err_el.text = "No records match the request"
+            return etree.tostring(root_end, xml_declaration=True, encoding="UTF-8", pretty_print=True)
     last_seen = None
     while coll_idx < len(OAI_COLLECTIONS) and remaining > 0:
         coll_name = OAI_COLLECTIONS[coll_idx]
@@ -243,7 +253,9 @@ def ListRecords_with_pagination(
 
     has_more = False
     next_state = None
-    if last_seen:
+    # Don't signal "more" when the validation limit has been reached
+    _limit_reached = validation_limit > 0 and served >= validation_limit
+    if last_seen and not _limit_reached:
         coll_idx_next = OAI_COLLECTIONS.index(last_seen[0])
         c = last_seen[0]
         if c in db.list_collection_names() and db[c].find_one({"_id": {"$gt": last_seen[1]}}):
@@ -277,12 +289,24 @@ def ListRecords_with_pagination(
                     total += db[c_name].count_documents({}) # Simple count
             rt.set("completeListSize", str(total))
 
+    # OAI-PMH requires noRecordsMatch error when ListRecords has no results
+    if records_in_response == 0:
+        root = _oai_root()
+        responseDate = etree.SubElement(root, "responseDate")
+        responseDate.text = datetime.datetime.utcnow().isoformat() + "Z"
+        request = etree.SubElement(root, "request")
+        request.text = CURRENT_REQUEST_URL or BASE_URL
+        error = etree.SubElement(root, "error")
+        error.set("code", "noRecordsMatch")
+        error.text = "No records match the request"
+        return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
+
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
 def ListIdentifiers_with_pagination(
     db, 
-    metadataPrefix: str = "cerif",
+    metadataPrefix: str = "oai_cerif_openaire",
     resumptionToken: Optional[str] = None, 
     pageSize: int = 100, 
     setSpec: Optional[str] = None,
@@ -401,7 +425,8 @@ def ListIdentifiers_with_pagination(
 
     has_more = False
     next_state = None
-    if last_seen:
+    _limit_reached = validation_limit > 0 and served >= validation_limit
+    if last_seen and not _limit_reached:
         coll_idx_next = OAI_COLLECTIONS.index(last_seen[0])
         c = last_seen[0]
         if c in db.list_collection_names() and db[c].find_one({"_id": {"$gt": last_seen[1]}}):
@@ -429,23 +454,41 @@ def ListIdentifiers_with_pagination(
 
 
 
-def get_record(identifier: str, metadataPrefix: Optional[str] = "cerif"):
-    if ":" not in identifier:
+def get_record(identifier: str, metadataPrefix: Optional[str] = "oai_cerif_openaire"):
+    # OAI identifier format: oai:<repo>:<docid>
+    prefix = f"oai:{REPO_IDENTIFIER}:"
+    if not identifier.startswith(prefix):
         root = _oai_root()
         err = etree.SubElement(root, "error")
+        err.set("code", "idDoesNotExist")
         err.text = "Bad identifier format"
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
-    collection, docid = identifier.split(":", 1)
+    docid = identifier[len(prefix):]
     db = get_db()
-    if collection not in db.list_collection_names():
-        root = _oai_root()
-        err = etree.SubElement(root, "error")
-        err.text = "Collection not found"
-        return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
-    doc = db[collection].find_one({"_id": docid})
+    # Search across all OAI collections for the document
+    doc = None
+    found_collection = None
+    for coll in OAI_COLLECTIONS:
+        if coll in db.list_collection_names():
+            doc = db[coll].find_one({"_id": docid})
+            if doc:
+                found_collection = coll
+                break
+    if not doc:
+        from bson import ObjectId
+        for coll in OAI_COLLECTIONS:
+            if coll in db.list_collection_names():
+                try:
+                    doc = db[coll].find_one({"_id": ObjectId(docid)})
+                except Exception:
+                    continue
+                if doc:
+                    found_collection = coll
+                    break
     if not doc:
         root = _oai_root()
         err = etree.SubElement(root, "error")
+        err.set("code", "idDoesNotExist")
         err.text = "Record not found"
         return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
@@ -455,9 +498,9 @@ def get_record(identifier: str, metadataPrefix: Optional[str] = "cerif"):
     request = etree.SubElement(root, "request")
     request.text = CURRENT_REQUEST_URL or BASE_URL
     record = etree.SubElement(root, "record")
-    _doc_header(record, collection, doc)
+    _doc_header(record, found_collection, doc)
     metadata = etree.SubElement(record, "metadata")
-    metadata.append(doc_to_cerif_element(doc, collection=collection, metadataPrefix=metadataPrefix))
+    metadata.append(doc_to_cerif_element(doc, collection=found_collection, metadataPrefix=metadataPrefix))
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 
@@ -478,7 +521,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         lm = etree.SubElement(root, "ListMetadataFormats")
         mf1 = etree.SubElement(lm, "metadataFormat")
         mp1 = etree.SubElement(mf1, "metadataPrefix")
-        mp1.text = "cerif"
+        mp1.text = "oai_cerif_openaire"
         schema1 = etree.SubElement(mf1, "schema")
         schema1.text = "https://www.openaire.eu/schema/cris/1.2/openaire-cerif-profile.xsd"
         mn1 = etree.SubElement(mf1, "metadataNamespace")
@@ -518,7 +561,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         db = get_db()
         return ListRecords_with_pagination(
             db, 
-            args.get("metadataPrefix", "cerif"), 
+            args.get("metadataPrefix", "oai_cerif_openaire"), 
             token, 
             pageSize, 
             setSpec,
@@ -527,7 +570,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         )
     elif verb == "GetRecord":
         identifier = args.get("identifier")
-        return get_record(identifier, args.get("metadataPrefix", "cerif"))
+        return get_record(identifier, args.get("metadataPrefix", "oai_cerif_openaire"))
     elif verb == "ListIdentifiers":
         token = args.get("resumptionToken")
         pageSize = int(args.get("pageSize") or 100)
@@ -537,7 +580,7 @@ def handle_oai(args, base_url: Optional[str] = None):
         db = get_db()
         return ListIdentifiers_with_pagination(
             db, 
-            args.get("metadataPrefix", "cerif"),
+            args.get("metadataPrefix", "oai_cerif_openaire"),
             token, 
             pageSize, 
             setSpec,

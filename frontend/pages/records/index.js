@@ -40,7 +40,7 @@ const METADATA_FORMATS = [
 
 export default function Records() {
   const router = useRouter()
-  const { set = 'all', prefix = 'cerif', from, until } = router.query
+  const { set = 'all', prefix = 'oai_cerif_openaire', from, until } = router.query
   
   const [loading, setLoading] = useState(false)
   const [records, setRecords] = useState([])
@@ -212,7 +212,7 @@ export default function Records() {
   useEffect(() => {
     if (router.isReady) {
       const { set, prefix, from, until } = router.query
-      const pref = prefix || 'cerif'
+      const pref = prefix || 'oai_cerif_openaire'
       let url = `/oai?verb=ListRecords&metadataPrefix=${pref}`
       if (set && set !== 'all') url += `&set=${set}`
       if (from) url += `&from=${from}`
