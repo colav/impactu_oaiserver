@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(curl -s -o /dev/null -w \"instituciones: HTTP %{http_code}\\\\n\" \"http://localhost:9090/lareferencia/instituciones\")"
-    ]
-  }
-}

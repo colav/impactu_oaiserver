@@ -64,3 +64,4 @@ coverage/
 # Docker validator runtime temp (avoid committing root-owned logs)
 docker/openaire-validator/data/tmp/
 docker/openaire-validator/data/*.log
+.claude/
