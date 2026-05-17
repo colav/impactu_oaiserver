@@ -10,13 +10,15 @@ export default function SiteFooter() {
       <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '0 24px' }}>
         <Row justify="center" align="middle">
           <Col span={24} style={{ textAlign: 'center' }}>
-            <div className="footer-col-title">Fundadores:</div>
+            <div className="footer-col-title">Aliados:</div>
             <Row justify="center" align="middle" gutter={[48, 24]}>
-              <Col><img src="/media/logo_udea.svg" alt="UdeA" style={{ height: 60 }} /></Col>
-              <Col><img src="/media/logo_unaula.svg" alt="Unaula" style={{ height: 48 }} /></Col>
-              <Col><img src="/media/logo_uec.svg" alt="Externado" style={{ height: 54 }} /></Col>
-              <Col><img src="/media/logo_univalle.svg" alt="Univalle" style={{ height: 58 }} /></Col>
+              <Col><img src="/media/logo_udea.svg" alt="Universidad de Antioquia" style={{ height: 60 }} /></Col>
+              <Col><img src="/media/logo_unaula.svg" alt="Universidad Autónoma Latinoamericana" style={{ height: 48 }} /></Col>
+              <Col><img src="/media/logo_uec.svg" alt="Universidad Externado de Colombia" style={{ height: 54 }} /></Col>
+              <Col><img src="/media/logo_univalle.svg" alt="Universidad del Valle" style={{ height: 58 }} /></Col>
               <Col><img src="/media/logo_ascun.svg" alt="ASCUN" style={{ height: 48 }} /></Col>
+              <Col><img src="/media/logo_upn.svg" alt="Universidad Pedagógica Nacional" style={{ height: 54 }} /></Col>
+              <Col><img src="/media/logo_fucs.svg" alt="Fundación Universitaria de Ciencias de la Salud" style={{ height: 54 }} /></Col>
             </Row>
           </Col>
         </Row>
