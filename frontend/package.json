@@ -10,8 +10,11 @@
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
     "antd": "^6.2.1",
-    "next": "^16.1.4",
+    "next": "^16.2.6",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
+  },
+  "overrides": {
+    "postcss": "^8.5.14"
   }
 }
