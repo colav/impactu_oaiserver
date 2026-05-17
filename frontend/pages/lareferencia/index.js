@@ -68,7 +68,7 @@ const PARAMS = [
   { p: 'set', req: 'No', d: 'Acrónimo de la institución a cosechar (p. ej. unaula). Si se omite, se cosechan todas.' },
   { p: 'from', req: 'No', d: 'Fecha inicial (YYYY-MM-DD). Filtra por la fecha del registro (datestamp).' },
   { p: 'until', req: 'No', d: 'Fecha final (YYYY-MM-DD).' },
-  { p: 'resumptionToken', req: 'No', d: 'Token de continuación entregado por el servidor para paginar la cosecha.' },
+  { p: 'resumptionToken', req: 'No', d: 'Token de continuación entregado por el servidor para paginar la cosecha. Conserva los filtros y el tamaño de página entre peticiones.' },
 ]
 
 export default function LaReferenciaHome() {
@@ -225,7 +225,7 @@ export default function LaReferenciaHome() {
             },
             {
               title: 'Paginar con resumptionToken',
-              description: 'Cuando la respuesta incluya un elemento <resumptionToken>, repita la petición usando ese token hasta que ya no aparezca.',
+              description: 'Cuando la respuesta incluya un <resumptionToken> con valor, repita la petición usando ese token. El atributo completeListSize indica el total de registros y cursor cuántos se han entregado. La cosecha termina cuando el token llega vacío.',
             },
             {
               title: 'Cosecha incremental',

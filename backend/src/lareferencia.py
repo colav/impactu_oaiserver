@@ -290,6 +290,15 @@ def _date_filter(from_arg: Optional[str], until_arg: Optional[str]) -> Dict[str,
     return query
 
 
+def _complete_list_size(db, colls: List[str]) -> int:
+    """Total number of records across the harvested collections.
+
+    Uses estimated counts (instant, read from collection metadata). Only
+    meaningful when no date filter is applied — with from/until the size
+    cannot be counted cheaply, so callers skip it."""
+    return sum(int(db[c].estimated_document_count()) for c in colls)
+
+
 def _paginate(verb: str, args: Dict[str, Any]):
     """Shared driver for ListRecords and ListIdentifiers.
 
@@ -314,11 +323,17 @@ def _paginate(verb: str, args: Dict[str, Any]):
         if not dec:
             return _error("badResumptionToken", "Invalid resumptionToken", verb_attrs)
         state.update(dec)
-        # filters travel inside the token across pages
+        # filters and page size travel inside the token across pages, so the
+        # whole harvest stays consistent even if the client omits them
         metadata_prefix = state.get("prefix") or metadata_prefix
         set_spec = state.get("set") or set_spec
         from_arg = state.get("from") or from_arg
         until_arg = state.get("until") or until_arg
+        try:
+            page_size = int(state.get("pageSize") or page_size)
+        except Exception:
+            pass
+        page_size = max(1, min(page_size, 1000))
     else:
         verb_attrs["metadataPrefix"] = metadata_prefix or METADATA_PREFIX
         if set_spec:
@@ -348,6 +363,16 @@ def _paginate(verb: str, args: Dict[str, Any]):
     served = int(state.get("served") or 0)
 
     base_query = _date_filter(from_arg, until_arg)
+
+    # completeListSize is computed once (on the first request) and then carried
+    # in the token. It is skipped when a date filter is active, since the size
+    # cannot be counted cheaply in that case.
+    if "total" in state:
+        complete_size = state.get("total")
+    elif from_arg or until_arg:
+        complete_size = None
+    else:
+        complete_size = _complete_list_size(db, colls)
 
     root = _base_skeleton(verb_attrs if not resumption_token else {"verb": verb})
     container = etree.SubElement(root, _qn(verb))
@@ -400,15 +425,28 @@ def _paginate(verb: str, args: Dict[str, Any]):
     if next_state is not None:
         next_state["served"] = served
         next_state["prefix"] = metadata_prefix or METADATA_PREFIX
+        next_state["pageSize"] = page_size
         if set_spec:
             next_state["set"] = set_spec
         if from_arg:
             next_state["from"] = from_arg
         if until_arg:
             next_state["until"] = until_arg
+        if complete_size is not None:
+            next_state["total"] = complete_size
         rt = etree.SubElement(container, _qn("resumptionToken"))
         rt.text = _encode_token(next_state)
         rt.set("cursor", str(served - emitted))
+        if complete_size is not None:
+            rt.set("completeListSize", str(complete_size))
+    elif resumption_token:
+        # The harvest was paginated and has now finished: emit an empty
+        # resumptionToken to formally close the list, as the OAI-PMH spec
+        # recommends for the last response of an incomplete list.
+        rt = etree.SubElement(container, _qn("resumptionToken"))
+        rt.set("cursor", str(served - emitted))
+        if complete_size is not None:
+            rt.set("completeListSize", str(complete_size))
 
     return _serialize(root)
 
