@@ -203,7 +203,11 @@ export default function Instituciones() {
         <Table
           columns={columns}
           dataSource={filtered}
-          pagination={{ pageSize: 25, showSizeChanger: true, showTotal: (t) => `${t} instituciones` }}
+          pagination={{
+            pageSize: 25,
+            showSizeChanger: false,
+            showTotal: (total, range) => `${range[0]}-${range[1]} de ${total} instituciones`,
+          }}
           size="middle"
         />
       </Card>

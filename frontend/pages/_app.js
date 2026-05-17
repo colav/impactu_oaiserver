@@ -1,5 +1,6 @@
 import Head from 'next/head'
 import { ConfigProvider, Layout } from 'antd'
+import esES from 'antd/locale/es_ES'
 import 'antd/dist/reset.css'
 import '../styles/globals.css'
 import NavBar from '../components/NavBar'
@@ -10,6 +11,7 @@ const { Content } = Layout
 export default function App({ Component, pageProps }) {
   return (
     <ConfigProvider
+      locale={esES}
       theme={{
         token: {
           colorPrimary: '#328181',
