@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import Response, JSONResponse
 from .oai import handle_oai, OAI_COLLECTIONS
+from .lareferencia import handle_lareferencia, stats as lareferencia_stats
 from .mongo_client import get_db
 import os
 import uvicorn
@@ -61,6 +62,55 @@ def oai_endpoint(
             + "</OAI-PMH>"
         )
         return Response(content=body, media_type="application/xml", status_code=500)
+
+
+@app.get("/lareferencia/oai")
+def lareferencia_endpoint(
+    request: Request,
+    verb: str = Query(None),
+    metadataPrefix: str = Query(None),
+    resumptionToken: str = Query(None),
+    pageSize: int = Query(None),
+    identifier: str = Query(None),
+    set: str = Query(None),
+    from_date: str = Query(None, alias="from"),
+    until_date: str = Query(None, alias="until"),
+):
+    """OAI-PMH endpoint exposing the harvested DSpace records for LaReferencia."""
+    args = {
+        "verb": verb,
+        "metadataPrefix": metadataPrefix,
+        "resumptionToken": resumptionToken,
+        "pageSize": pageSize,
+        "identifier": identifier,
+        "set": set,
+        "from": from_date,
+        "until": until_date,
+    }
+    args = {k: v for k, v in args.items() if v is not None}
+    try:
+        xf = request.headers.get("x-forwarded-host")
+        host = xf or request.headers.get("host")
+        scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+        base = f"{scheme}://{host}{request.url.path}"
+        _logging.info(f"LaReferencia computed base URL: {base}")
+        xml = handle_lareferencia(args, base_url=base)
+        return Response(content=xml, media_type="application/xml")
+    except Exception as e:
+        logging.exception("Unhandled error in LaReferencia endpoint")
+        logging.error(traceback.format_exc())
+        body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">'
+            "<error>" + escape(str(e)) + "</error>"
+            "</OAI-PMH>"
+        )
+        return Response(content=body, media_type="application/xml", status_code=500)
+
+
+@app.get("/lareferencia/stats")
+def lareferencia_stats_endpoint():
+    return JSONResponse(lareferencia_stats())
 
 
 @app.get("/stats")

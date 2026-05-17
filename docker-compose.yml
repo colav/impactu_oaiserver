@@ -11,6 +11,7 @@ services:
       - PORT=${BACKEND_PORT:-9091}
       - MONGO_URI=${MONGO_URI:-mongodb://localhost:27017}
       - DB_NAME=${DB_NAME:-kahi}
+      - LAREFERENCIA_DB_NAME=${LAREFERENCIA_DB_NAME:-oxomoc_colombia}
     restart: always
 
   frontend:

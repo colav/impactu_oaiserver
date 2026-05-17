@@ -14,7 +14,9 @@ license = { text = "MIT" }
 dependencies = [
   "fastapi>=0.75",
   "uvicorn[standard]>=0.18",
-  "pymongo>=4.0"
+  "pymongo>=4.0",
+  "lxml>=4.0",
+  "xmltodict>=0.13.0"
 ]
 
 [project.scripts]

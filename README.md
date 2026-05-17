@@ -51,6 +51,25 @@ Example requests:
 - **List Records (CERIF):** `GET /oai?verb=ListRecords&metadataPrefix=cerif`
 - **Filtered by Set:** `GET /oai?verb=ListRecords&metadataPrefix=cerif&set=openaire_cris_publications`
 
+## LaReferencia Endpoint
+A separate OAI-PMH repository exposes the harvested DSpace records of the
+Colombian institutional repositories (stored in the `oxomoc_colombia` database).
+Each institution is published as an OAI set; records are served in the DSpace
+`dim` metadata format.
+
+- **OAI-PMH harvest endpoint:** `GET /lareferencia/oai?verb=...`
+- **Per-institution counts:** `GET /lareferencia/stats`
+- **Website / harvesting docs:** `/lareferencia` and `/lareferencia/instituciones`
+
+Example requests:
+- **Identify:** `GET /lareferencia/oai?verb=Identify`
+- **List Sets (institutions):** `GET /lareferencia/oai?verb=ListSets`
+- **Harvest all:** `GET /lareferencia/oai?verb=ListRecords&metadataPrefix=dim`
+- **Harvest one institution:** `GET /lareferencia/oai?verb=ListRecords&metadataPrefix=dim&set=unaula`
+
+Configuration variables: `LAREFERENCIA_DB_NAME` (default `oxomoc_colombia`) and
+`LAREFERENCIA_BASE_URL`.
+
 ## Frontend Explorer
 The project includes a Next.js based UI to browse records.
 Navigate to the `frontend/` directory and run:
@@ -59,10 +78,13 @@ Navigate to the `frontend/` directory and run:
 npm install
 npm run dev
 ```
-Then visit `http://localhost:3000/records`.
+Then visit `http://localhost:3000/records` (CERIF explorer) or
+`http://localhost:3000/lareferencia` (LaReferencia website and harvesting docs).
 
 ## Project Structure
-- `backend/src/oai.py`: Core OAI-PMH protocol logic.
+- `backend/src/oai.py`: Core OAI-PMH protocol logic (CERIF repository).
 - `backend/src/cerif.py`: XML mapping for CERIF 1.2 profiles.
-- `frontend/pages/records/`: Record explorer UI.
+- `backend/src/lareferencia.py`: OAI-PMH repository for the DSpace records (LaReferencia).
+- `frontend/pages/records/`: CERIF record explorer UI.
+- `frontend/pages/lareferencia/`: LaReferencia website and harvesting documentation.
 - `docker/`: Deployment configurations.

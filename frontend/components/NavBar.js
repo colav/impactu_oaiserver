@@ -67,6 +67,11 @@ export default function NavBar() {
                 Explorar
               </Button>
             </Link>
+            <Link href="/lareferencia">
+              <Button type="text" style={{ color: '#ffffff', fontWeight: 600 }}>
+                LaReferencia
+              </Button>
+            </Link>
           </Space>
         </Col>
       </Row>

@@ -4,6 +4,7 @@ from pymongo import MongoClient, ASCENDING
 
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "kahi")
+LAREFERENCIA_DB_NAME = os.getenv("LAREFERENCIA_DB_NAME", "oxomoc_colombia")
 
 _client = None
 _indexes_created = False
@@ -72,3 +73,15 @@ def get_db():
 def get_collection(name: str = "entities"):
     """Return the named collection from the `kahi` database (default: `entities`)."""
     return get_db()[name]
+
+
+def get_lareferencia_db():
+    """Return the database holding the harvested DSpace records for LaReferencia.
+
+    This database (`oxomoc_colombia` by default) holds one `dspace_<acronym>_records`
+    collection per Colombian institution. It is read-only here, so no indexes are
+    created (records are keyed by `_id`, which is already indexed by MongoDB)."""
+    global _client
+    if _client is None:
+        _client = MongoClient(MONGO_URI)
+    return _client[LAREFERENCIA_DB_NAME]

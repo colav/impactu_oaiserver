@@ -20,5 +20,6 @@ COPY pyproject.toml ./
 ENV PORT=9090
 ENV MONGO_URI=mongodb://localhost:27017
 ENV DB_NAME=kahi
+ENV LAREFERENCIA_DB_NAME=oxomoc_colombia
 
 CMD uvicorn backend.src.app:app --host 0.0.0.0 --port $PORT

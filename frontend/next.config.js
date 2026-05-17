@@ -11,6 +11,10 @@ const nextConfig = {
       { source: '/oai', destination: `${backendUrl}/oai` },
       { source: '/oai/:path*', destination: `${backendUrl}/oai/:path*` },
       { source: '/stats', destination: `${backendUrl}/stats` },
+      // LaReferencia: OAI-PMH harvest endpoint + stats. The /lareferencia and
+      // /lareferencia/instituciones routes are served by Next.js pages.
+      { source: '/lareferencia/oai', destination: `${backendUrl}/lareferencia/oai` },
+      { source: '/lareferencia/stats', destination: `${backendUrl}/lareferencia/stats` },
     ]
   },
 }
